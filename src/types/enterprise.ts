@@ -31,6 +31,8 @@ export interface Organization {
   max_seats?: number | null;
   /** Power-up add-ons included in the subscription (e.g. ["gallery"], ["editor"], ["fullframe"]) */
   addon_ids?: string[];
+  /** Present when the org is on Stripe subscription billing (admin-provisioned enterprise). */
+  stripe_subscription_id?: string | null;
   created_at: string;
   created_by: string;
 }

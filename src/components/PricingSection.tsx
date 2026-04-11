@@ -553,7 +553,7 @@ export default function PricingSection() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="flex flex-col justify-center rounded-xl border border-neutral-100 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800">
                   <span className="text-xl font-bold text-neutral-900 dark:text-white">
-                    16 TB+
+                    15 TB+
                   </span>
                   <span className="mt-0.5 text-sm font-medium text-neutral-500 dark:text-neutral-400">
                     Custom Storage
@@ -564,7 +564,7 @@ export default function PricingSection() {
                     Custom
                   </span>
                   <span className="mt-0.5 text-sm font-medium text-neutral-500 dark:text-neutral-400">
-                    Team Seats ($9/seat)
+                    Team Seats ($10/seat)
                   </span>
                 </div>
                 <div className="flex flex-col justify-center rounded-xl border border-neutral-100 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800">

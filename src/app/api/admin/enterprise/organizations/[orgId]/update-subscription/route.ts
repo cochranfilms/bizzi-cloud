@@ -13,7 +13,7 @@ import Stripe from "stripe";
 import type { AddonId } from "@/lib/plan-constants";
 
 const TB = 1024 * 1024 * 1024 * 1024;
-const MIN_STORAGE_TB = 20;
+const MIN_STORAGE_TB = 15;
 const VALID_ADDON_IDS = ["gallery", "editor", "fullframe"] as const;
 
 export async function POST(

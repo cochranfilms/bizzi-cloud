@@ -16,6 +16,7 @@ import {
   getPersonalTeamSeatMembershipsForProfile,
 } from "@/lib/personal-team-auth";
 import { parseWorkspaceOnboardingFromProfile } from "@/lib/workspace-onboarding";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{2,39}$/;
 
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
   const data = profileSnap.data() ?? {};
   const handle = data.public_slug ?? null;
   const planId = (data.plan_id as string) ?? "free";
-  const hasPortalAccess = !!data.stripe_customer_id;
+  let hasPortalAccess = !!data.stripe_customer_id;
   let addonIds = Array.isArray(data.addon_ids)
     ? (data.addon_ids as string[])
     : [];
@@ -51,6 +52,13 @@ export async function GET(request: Request) {
     const orgData = orgSnap.data();
     if (orgData && Array.isArray(orgData.addon_ids) && orgData.addon_ids.length > 0) {
       addonIds = orgData.addon_ids as string[];
+    }
+    const orgCustomer = orgData?.stripe_customer_id as string | undefined;
+    if (orgCustomer) {
+      const access = await resolveEnterpriseAccess(auth.uid, orgId);
+      if (access.isAdmin) {
+        hasPortalAccess = true;
+      }
     }
   }
 

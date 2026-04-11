@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import PageHeader from "../components/shared/PageHeader";
 import { Building2, Loader2, Users, Send, Trash2, Pencil } from "lucide-react";
-const MIN_STORAGE_TB = 20;
+const MIN_STORAGE_TB = 15;
 import { powerUpAddons } from "@/lib/pricing-data";
 
 export interface OrgListItem {
@@ -32,7 +32,7 @@ export default function OrganizationsPage() {
   const [orgName, setOrgName] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
   const [maxSeats, setMaxSeats] = useState("1");
-  const [storageTb, setStorageTb] = useState("20");
+  const [storageTb, setStorageTb] = useState("15");
   const [storagePriceMonthly, setStoragePriceMonthly] = useState("");
   const [addonIds, setAddonIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
@@ -50,7 +50,7 @@ export default function OrganizationsPage() {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [editModalOrg, setEditModalOrg] = useState<OrgListItem | null>(null);
-  const [editStorageTb, setEditStorageTb] = useState("20");
+  const [editStorageTb, setEditStorageTb] = useState("15");
   const [editStoragePriceMonthly, setEditStoragePriceMonthly] = useState("");
   const [editAddonIds, setEditAddonIds] = useState<string[]>([]);
   const [editLoading, setEditLoading] = useState(false);
@@ -112,7 +112,7 @@ export default function OrganizationsPage() {
       setOrgName("");
       setOwnerEmail("");
       setMaxSeats("1");
-      setStorageTb("20");
+      setStorageTb("15");
       setStoragePriceMonthly("");
       setAddonIds([]);
       fetchOrganizations();
@@ -150,7 +150,7 @@ export default function OrganizationsPage() {
       const storageTbNum =
         org.storage_quota_bytes != null
           ? Math.round(org.storage_quota_bytes / (1024 ** 4))
-          : 20;
+          : MIN_STORAGE_TB;
       setEditStorageTb(String(Math.max(MIN_STORAGE_TB, storageTbNum)));
       setEditAddonIds(org.addon_ids ?? []);
       setEditStoragePriceMonthly("");
@@ -198,7 +198,7 @@ export default function OrganizationsPage() {
       const currentTb =
         editModalOrg.storage_quota_bytes != null
           ? Math.round(editModalOrg.storage_quota_bytes / (1024 ** 4))
-          : 20;
+          : MIN_STORAGE_TB;
       const storageChanged = !isNaN(tbNum) && tbNum >= MIN_STORAGE_TB && tbNum !== currentTb;
       const priceChanged = !isNaN(priceNum) && priceNum > 0;
       if (storageChanged && !priceChanged) {
@@ -560,7 +560,7 @@ export default function OrganizationsPage() {
               disabled={creating}
             />
             <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-              Seats are $9/seat/mo. Required for all organizations.
+              Seats are $10/seat/mo. Required for all organizations.
             </p>
           </div>
           <div>

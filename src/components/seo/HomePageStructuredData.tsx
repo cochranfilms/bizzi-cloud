@@ -50,7 +50,7 @@ export function HomePageStructuredData() {
     offers: {
       "@type": "AggregateOffer",
       lowPrice: "0",
-      highPrice: "70",
+      highPrice: String(Math.max(...plans.map((p) => p.price), 0)),
       priceCurrency: "USD",
       offerCount: plans.length + 1,
     },

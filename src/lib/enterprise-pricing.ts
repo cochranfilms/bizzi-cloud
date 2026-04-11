@@ -4,7 +4,7 @@
  */
 
 /** Price per seat per month (matches SEAT_PRICE from pricing-data) */
-export const ENTERPRISE_SEAT_PRICE = 9;
+export const ENTERPRISE_SEAT_PRICE = 10;
 
 /** Enterprise storage tier: bytes and monthly price in dollars */
 export interface EnterpriseStorageTier {
@@ -20,7 +20,7 @@ const TB = 1024 * 1024 * 1024 * 1024;
 export const ENTERPRISE_STORAGE_TIERS: EnterpriseStorageTier[] = [
   { id: "1tb", label: "1 TB", bytes: 1 * TB, priceMonthly: 50 },
   { id: "5tb", label: "5 TB", bytes: 5 * TB, priceMonthly: 200 },
-  { id: "16tb", label: "16 TB", bytes: 16 * TB, priceMonthly: 500 },
+  { id: "15tb", label: "15 TB", bytes: 15 * TB, priceMonthly: 500 },
 ];
 
 /** Get storage tier by bytes, or null if not a standard tier */

@@ -25,7 +25,7 @@ export const productSettingsCopy = {
     notInCheckoutTitle: "Personal team seats: Not included in this checkout",
     addLaterLine: "You can add seats later in Settings or Change Plan",
     collaboratorsExplainer:
-      "Need collaborators? Personal team seats can be added after signup from Settings or Change Plan.",
+      "Need collaboration seats? Personal team seats can be added after you continue below—then manage them anytime in Settings or Change Plan.",
   },
   organizationSeats: {
     label: "Organization seats",

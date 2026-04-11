@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import {
@@ -14,6 +14,7 @@ import {
   STORAGE_ADDON_LABELS,
   getStorageAddonTb,
   planAllowsPersonalTeamSeats,
+  ANNUAL_SAVINGS_PERCENT,
   type StorageAddonId,
 } from "@/lib/pricing-data";
 import {
@@ -33,6 +34,7 @@ import type {
   SubscriptionReceiptDisplay,
 } from "@/lib/stripe-subscription-line-items";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
+import { createStripePortalSession } from "@/lib/stripe-portal-client";
 import StickyUnsavedBar from "@/components/settings/StickyUnsavedBar";
 import { AlertTriangle, Check, Loader2, Mail, Minus, Plus } from "lucide-react";
 
@@ -129,6 +131,7 @@ export default function BuildPlanConfigurator({
   landingError = null,
 }: BuildPlanConfiguratorProps) {
   const router = useRouter();
+  const pathname = usePathname() ?? "";
   const { user } = useAuth();
   const isDashboard = mode === "dashboard";
   const isLanding = mode === "landing";
@@ -405,22 +408,18 @@ export default function BuildPlanConfigurator({
     try {
       const token = await getFirebaseAuth().currentUser?.getIdToken(true);
       if (!token) return;
-      const base = typeof window !== "undefined" ? window.location.origin : "";
-      const res = await fetch(`${base}/api/stripe/portal`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+      const onChangePlan = pathname.includes("/change-plan");
+      const result = await createStripePortalSession(token, {
+        customer_context: "auto",
+        return_path: onChangePlan ? "change_plan" : "dashboard_settings",
       });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (res.ok && data.url) {
-        window.location.href = data.url;
+      if (result.ok) {
+        window.location.href = result.url;
       }
     } catch {
       // ignore
     }
-  }, [user]);
+  }, [user, pathname]);
 
   const applySubscriptionChanges = useCallback(async () => {
     if (!selectedPlanId || !user || !isDashboard || !refetchSubscription) return;
@@ -1108,7 +1107,7 @@ export default function BuildPlanConfigurator({
                   : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
               }`}
             >
-              Annual (save 25%)
+              Annual (save {ANNUAL_SAVINGS_PERCENT}%)
             </button>
           </div>
         </div>
@@ -1220,7 +1219,7 @@ export default function BuildPlanConfigurator({
               className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-5 py-2.5 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50"
             >
               {landingSubscribeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Subscribe
+              Continue
             </button>
           </div>
         </div>

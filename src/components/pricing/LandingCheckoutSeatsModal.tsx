@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, Minus, Plus } from "lucide-react";
-import { plans, powerUpAddons, planAllowsPersonalTeamSeats } from "@/lib/pricing-data";
+import { plans, powerUpAddons, planAllowsPersonalTeamSeats, ANNUAL_SAVINGS_PERCENT } from "@/lib/pricing-data";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
 import type { PlanBuilderCheckoutPayload } from "@/components/pricing/BuildPlanConfigurator";
 import {
@@ -151,7 +151,7 @@ export default function LandingCheckoutSeatsModal({
       headline: `~${formatUsd(combinedMo)}/mo`,
       headlineNote: "typical monthly average before taxes",
       footnote:
-        "Base plan and extra seats are billed annually (25% off vs monthly). Power Ups stay on monthly billing like your subscription invoice.",
+        `Base plan and extra seats are billed annually (${ANNUAL_SAVINGS_PERCENT}% off vs monthly). Power Ups stay on monthly billing like your subscription invoice.`,
     };
   }, [payload, plan, addonMonthly, effectiveSeats, allowsSeats]);
 
@@ -174,13 +174,11 @@ export default function LandingCheckoutSeatsModal({
         aria-labelledby="landing-seats-title"
       >
         <h2 id="landing-seats-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
-          Extra seats for your personal team?
+          Invite collaborators to your workspace.
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
-          {productSettingsCopy.personalTeamSeats.helper} Invite collaborators to a shared{" "}
-          <strong className="text-neutral-800 dark:text-neutral-200">personal team workspace</strong> (not an
-          Organization). Your plan already includes you as owner; add paid seats only if others need their own login
-          and access.
+          Your plan includes 1 owner seat. Add seats for teammates who need their own login and access. These seats
+          apply to personal workspaces, not Organizations.
         </p>
 
         {allowsSeats ? (
@@ -189,8 +187,8 @@ export default function LandingCheckoutSeatsModal({
               Add extra seats now (optional)
             </p>
             <p className="text-xs text-neutral-600 dark:text-neutral-400">
-              Max {MAX_EXTRA_PERSONAL_TEAM_SEATS} extra seats total across tiers. Pricing updates your Stripe checkout
-              total below.
+              Up to {MAX_EXTRA_PERSONAL_TEAM_SEATS} extra seats total across tiers. Counts here update the Stripe
+              checkout total shown below.
             </p>
             {(["none", "gallery", "editor", "fullframe"] as const).map((tier) => {
               const count = draft[tier];
@@ -207,7 +205,7 @@ export default function LandingCheckoutSeatsModal({
                     </p>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">
                       {payload.billing === "annual"
-                        ? `${formatUsd(teamSeatAnnualCentsPerSeat(tier) / 100)}/yr per seat (25% off yearly)`
+                        ? `${formatUsd(teamSeatAnnualCentsPerSeat(tier) / 100)}/yr per seat (${ANNUAL_SAVINGS_PERCENT}% off yearly)`
                         : `+${formatUsd(TEAM_SEAT_MONTHLY_USD[tier])}/mo per seat`}
                     </p>
                   </div>

@@ -3,6 +3,8 @@
  * Extra seats only; owner includes first seat.
  */
 
+import { ANNUAL_SAVINGS_PERCENT } from "@/lib/pricing-data";
+
 export type PersonalTeamSeatAccess = "none" | "gallery" | "editor" | "fullframe";
 
 export const PERSONAL_TEAM_SEAT_ACCESS_LEVELS: PersonalTeamSeatAccess[] = [
@@ -14,10 +16,10 @@ export const PERSONAL_TEAM_SEAT_ACCESS_LEVELS: PersonalTeamSeatAccess[] = [
 
 /** Monthly USD per additional seat at this access tier */
 export const TEAM_SEAT_MONTHLY_USD: Record<PersonalTeamSeatAccess, number> = {
-  none: 9,
-  gallery: 12,
-  editor: 14,
-  fullframe: 16,
+  none: 10,
+  gallery: 18,
+  editor: 25,
+  fullframe: 30,
 };
 
 export const MAX_EXTRA_PERSONAL_TEAM_SEATS = 9;
@@ -55,7 +57,7 @@ export function teamSeatMonthlySubtotal(c: TeamSeatCounts): number {
   );
 }
 
-/** Total annual USD for all extra seats (Stripe annual tier prices use 25% off × 12). */
+/** Total annual USD for all extra seats (Stripe annual tier prices use same % off as base plans). */
 export function teamSeatsAnnualUsdTotal(c: TeamSeatCounts): number {
   return (
     c.none * teamSeatAnnualCentsPerSeat("none") +
@@ -65,10 +67,10 @@ export function teamSeatsAnnualUsdTotal(c: TeamSeatCounts): number {
   ) / 100;
 }
 
-/** Annual amount in cents (25% off vs 12 × monthly), matching plan annual pattern */
+/** Annual amount in cents (same % off vs 12 × monthly as base plans). */
 export function teamSeatAnnualCentsPerSeat(level: PersonalTeamSeatAccess): number {
   const m = TEAM_SEAT_MONTHLY_USD[level];
-  return Math.round(m * 12 * 0.75 * 100);
+  return Math.round(m * 12 * (1 - ANNUAL_SAVINGS_PERCENT / 100) * 100);
 }
 
 export function teamSeatMonthlyCentsPerSeat(level: PersonalTeamSeatAccess): number {
@@ -86,10 +88,10 @@ export function isPersonalTeamSeatAccess(s: string): s is PersonalTeamSeatAccess
 
 /** Display labels for EmailJS and Team Management UI */
 export const PERSONAL_TEAM_SEAT_ACCESS_LABELS: Record<PersonalTeamSeatAccess, string> = {
-  none: "Team seat (base access)",
-  gallery: "Bizzi Gallery Suite",
-  editor: "Bizzi Editor",
-  fullframe: "Bizzi Full Frame",
+  none: "Team Seat - STORAGE ONLY",
+  gallery: "Bizzi Gallery Suite +Seat",
+  editor: "Bizzi Editor +Seat",
+  fullframe: "Bizzi Full Frame +Seat",
 };
 
 /** Short capability line for invite emails */

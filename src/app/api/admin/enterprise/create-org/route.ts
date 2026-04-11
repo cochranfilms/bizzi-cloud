@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   if (authResult instanceof NextResponse) return authResult;
 
   const VALID_ADDON_IDS = ["gallery", "editor", "fullframe"] as const;
-  const MIN_STORAGE_TB = 20;
+  const MIN_STORAGE_TB = 15;
   let body: {
     org_name?: string;
     owner_email?: string;

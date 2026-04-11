@@ -59,6 +59,8 @@ function parseOrgFromFirestore(
       typeof data.unlimited_seat_count === "number" ? data.unlimited_seat_count : undefined,
     max_seats: data.max_seats ?? null,
     addon_ids: addonIds.length > 0 ? addonIds : undefined,
+    stripe_subscription_id:
+      typeof data.stripe_subscription_id === "string" ? data.stripe_subscription_id : null,
     created_at: created_at ? created_at.toISOString() : "",
     created_by: data.created_by ?? "",
   };

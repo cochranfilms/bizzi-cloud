@@ -41,6 +41,7 @@ import {
   TEAM_SEAT_MONTHLY_USD,
   PERSONAL_TEAM_SEAT_ACCESS_LABELS,
 } from "@/lib/team-seat-pricing";
+import { createStripePortalSession } from "@/lib/stripe-portal-client";
 import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import SettingsScopeHeader from "@/components/settings/SettingsScopeHeader";
@@ -578,23 +579,18 @@ function SubscriptionSection() {
     setPortalError(null);
     try {
       const token = await user.getIdToken();
-      const base = typeof window !== "undefined" ? window.location.origin : "";
-      const res = await fetch(`${base}/api/stripe/portal`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+      const result = await createStripePortalSession(token, {
+        customer_context: "auto",
+        return_path: "dashboard_settings",
       });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (res.ok && data.url) {
+      if (result.ok) {
         if (isDesktop) {
-          window.open(data.url, "_blank");
+          window.open(result.url, "_blank");
         } else {
-          window.location.href = data.url;
+          window.location.href = result.url;
         }
       } else {
-        setPortalError(data.error ?? "Failed to open billing portal");
+        setPortalError(result.error);
       }
     } catch {
       setPortalError("Failed to open billing portal");

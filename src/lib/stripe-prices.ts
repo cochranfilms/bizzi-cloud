@@ -7,7 +7,7 @@
 import { getStripeInstance } from "@/lib/stripe";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import type { PlanId, AddonId, BillingCycle } from "@/lib/plan-constants";
-import type { StorageAddonId } from "@/lib/pricing-data";
+import { annualPriceUsdFromMonthly, type StorageAddonId } from "@/lib/pricing-data";
 import {
   getStripePriceId as getEnvPriceId,
   getStripeAddonPriceId as getEnvAddonPriceId,
@@ -24,29 +24,29 @@ const FIRESTORE_COLLECTION = "stripe_prices";
 
 /** Plan pricing: [monthly cents, annual cents] */
 const PLAN_PRICING: Record<Exclude<PlanId, "free">, { name: string; monthly: number; annual: number }> = {
-  solo: { name: "Bizzi Creator", monthly: 1200, annual: 10800 },
-  indie: { name: "Bizzi Pro", monthly: 2000, annual: 18000 },
-  video: { name: "Bizzi Network", monthly: 3500, annual: 31500 },
-  production: { name: "Enterprise Creative", monthly: 7000, annual: 63000 },
+  solo: { name: "Bizzi Creator", monthly: 1200, annual: annualPriceUsdFromMonthly(12) * 100 },
+  indie: { name: "Bizzi Pro", monthly: 2000, annual: annualPriceUsdFromMonthly(20) * 100 },
+  video: { name: "Bizzi Network", monthly: 4500, annual: annualPriceUsdFromMonthly(45) * 100 },
+  production: { name: "Enterprise Creative", monthly: 9000, annual: annualPriceUsdFromMonthly(90) * 100 },
 };
 
 /** Addon pricing: monthly cents */
 const ADDON_PRICING: Record<AddonId, { name: string; monthly: number }> = {
-  gallery: { name: "Bizzi Gallery Suite", monthly: 500 },
-  editor: { name: "Bizzi Editor", monthly: 1000 },
-  fullframe: { name: "Bizzi Full Frame", monthly: 1200 },
+  gallery: { name: "Bizzi Gallery Suite", monthly: 800 },
+  editor: { name: "Bizzi Editor", monthly: 1500 },
+  fullframe: { name: "Bizzi Full Frame", monthly: 2000 },
 };
 
 /** Storage add-on pricing: monthly cents. Indie +1/+2/+3 TB, Video +1..+5 TB */
 const STORAGE_ADDON_PRICING: Record<StorageAddonId, { name: string; monthly: number; plan: "indie" | "video"; tb: number }> = {
-  indie_1: { name: "Additional Storage +1 TB (Bizzi Pro)", monthly: 800, plan: "indie", tb: 1 },
-  indie_2: { name: "Additional Storage +2 TB (Bizzi Pro)", monthly: 1500, plan: "indie", tb: 2 },
-  indie_3: { name: "Additional Storage +3 TB (Bizzi Pro)", monthly: 2200, plan: "indie", tb: 3 },
+  indie_1: { name: "Additional Storage +1 TB (Bizzi Pro)", monthly: 1000, plan: "indie", tb: 1 },
+  indie_2: { name: "Additional Storage +2 TB (Bizzi Pro)", monthly: 2000, plan: "indie", tb: 2 },
+  indie_3: { name: "Additional Storage +3 TB (Bizzi Pro)", monthly: 3000, plan: "indie", tb: 3 },
   video_1: { name: "Additional Storage +1 TB (Bizzi Network)", monthly: 1000, plan: "video", tb: 1 },
-  video_2: { name: "Additional Storage +2 TB (Bizzi Network)", monthly: 1900, plan: "video", tb: 2 },
-  video_3: { name: "Additional Storage +3 TB (Bizzi Network)", monthly: 2700, plan: "video", tb: 3 },
-  video_4: { name: "Additional Storage +4 TB (Bizzi Network)", monthly: 3400, plan: "video", tb: 4 },
-  video_5: { name: "Additional Storage +5 TB (Bizzi Network)", monthly: 4000, plan: "video", tb: 5 },
+  video_2: { name: "Additional Storage +2 TB (Bizzi Network)", monthly: 2000, plan: "video", tb: 2 },
+  video_3: { name: "Additional Storage +3 TB (Bizzi Network)", monthly: 3000, plan: "video", tb: 3 },
+  video_4: { name: "Additional Storage +4 TB (Bizzi Network)", monthly: 4000, plan: "video", tb: 4 },
+  video_5: { name: "Additional Storage +5 TB (Bizzi Network)", monthly: 5000, plan: "video", tb: 5 },
 };
 
 /** Get price ID from env if set (backward compat) */
@@ -218,13 +218,13 @@ export async function getOrCreateStripeStorageAddonPrice(storageAddonId: Storage
 }
 
 /** Enterprise storage tier IDs for recurring subscription prices */
-export type EnterpriseStorageTierId = "1tb" | "5tb" | "16tb";
+export type EnterpriseStorageTierId = "1tb" | "5tb" | "15tb";
 
 /** Enterprise storage pricing: monthly cents */
 const ENTERPRISE_STORAGE_PRICING: Record<EnterpriseStorageTierId, { name: string; monthly: number }> = {
   "1tb": { name: "Enterprise Storage 1 TB", monthly: 5000 },
   "5tb": { name: "Enterprise Storage 5 TB", monthly: 20000 },
-  "16tb": { name: "Enterprise Storage 16 TB", monthly: 50000 },
+  "15tb": { name: "Enterprise Storage 15 TB", monthly: 50000 },
 };
 
 /** Get or create Stripe price for enterprise storage. Caches in Firestore. */
@@ -269,7 +269,7 @@ export async function getOrCreateStripeEnterpriseStoragePrice(
   return price.id;
 }
 
-/** Extra seat price: $9/mo. Get or create Stripe price. Caches in Firestore. */
+/** Extra seat price (legacy org line item). Get or create Stripe price. Caches in Firestore. */
 export async function getOrCreateStripeSeatPrice(): Promise<string> {
   const envPrice = getEnvSeatFallback();
   if (envPrice) return envPrice;
@@ -294,7 +294,7 @@ export async function getOrCreateStripeSeatPrice(): Promise<string> {
 
     const price = await stripe.prices.create({
       product: product.id,
-      unit_amount: 900, // $9/mo
+      unit_amount: 1000, // $10/mo
       currency: "usd",
       recurring: { interval: "month" },
       metadata: { type: "seat" },

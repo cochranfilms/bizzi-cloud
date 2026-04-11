@@ -35,7 +35,14 @@ export const freeTier = {
 };
 
 /** Extra seat price per month (for plans that allow seats) */
-export const SEAT_PRICE = 9;
+export const SEAT_PRICE = 10;
+
+/** Annual billing: percent off vs paying 12× monthly (display + Stripe annual amounts). */
+export const ANNUAL_SAVINGS_PERCENT = 18;
+
+export function annualPriceUsdFromMonthly(monthlyUsd: number): number {
+  return Math.round(monthlyUsd * 12 * (1 - ANNUAL_SAVINGS_PERCENT / 100));
+}
 
 /** Storage tier options for unified plan builder. Includes free + paid. */
 export const storageTiers = [
@@ -53,7 +60,7 @@ export const storageTiers = [
     name: "Bizzi Creator",
     storage: "1 TB",
     price: 12,
-    annualPrice: 108,
+    annualPrice: annualPriceUsdFromMonthly(12),
     allowsSeats: false,
     accentColor: BIZZI_BYTE_COLORS.matcha,
   },
@@ -62,7 +69,7 @@ export const storageTiers = [
     name: "Bizzi Pro",
     storage: "2 TB",
     price: 20,
-    annualPrice: 180,
+    annualPrice: annualPriceUsdFromMonthly(20),
     allowsSeats: true,
     accentColor: BIZZI_BYTE_COLORS.habanero,
   },
@@ -70,8 +77,8 @@ export const storageTiers = [
     id: "video",
     name: "Bizzi Network",
     storage: "5 TB",
-    price: 35,
-    annualPrice: 315,
+    price: 45,
+    annualPrice: annualPriceUsdFromMonthly(45),
     allowsSeats: true,
     accentColor: BIZZI_BYTE_COLORS.frost,
   },
@@ -79,8 +86,8 @@ export const storageTiers = [
     id: "production",
     name: "We Bizzi",
     storage: "10 TB",
-    price: 70,
-    annualPrice: 630,
+    price: 90,
+    annualPrice: annualPriceUsdFromMonthly(90),
     allowsSeats: true,
     accentColor: BIZZI_BYTE_COLORS.onyx,
   },
@@ -98,7 +105,7 @@ export const plans = [
     tagline: "Essential",
     storage: "1 TB",
     price: 12,
-    annualPrice: 108,
+    annualPrice: annualPriceUsdFromMonthly(12),
     features: [
       "1 TB Encrypted Cloud Storage",
       "Access Your Files Anywhere (Wi‑Fi Enabled)",
@@ -120,7 +127,7 @@ export const plans = [
     tagline: "Most Popular",
     storage: "2 TB",
     price: 20,
-    annualPrice: 180,
+    annualPrice: annualPriceUsdFromMonthly(20),
     popular: true,
     features: [
       "2 TB Encrypted Cloud Storage",
@@ -143,8 +150,8 @@ export const plans = [
     name: "Bizzi Network",
     tagline: "Professional",
     storage: "5 TB",
-    price: 35,
-    annualPrice: 315,
+    price: 45,
+    annualPrice: annualPriceUsdFromMonthly(45),
     features: [
       "5 TB Encrypted Cloud Storage",
       "Up to 6 Team Seats",
@@ -167,8 +174,8 @@ export const plans = [
     name: "We Bizzi",
     tagline: "Agency & Production",
     storage: "10 TB",
-    price: 70,
-    annualPrice: 630,
+    price: 90,
+    annualPrice: annualPriceUsdFromMonthly(90),
     features: [
       "10 TB Encrypted Cloud Storage",
       "Up to 10 Team Seats",
@@ -193,7 +200,7 @@ export const powerUpAddons = [
     id: "gallery",
     name: "Bizzi Gallery Suite",
     tagline: "Gallery + Invoicing",
-    price: 5,
+    price: 8,
     description:
       "Photo galleries with invoicing, proofing & client delivery. 3 Lightroom presets included — toggle on/off like Rec.709.",
     features: [
@@ -211,7 +218,7 @@ export const powerUpAddons = [
     id: "editor",
     name: "Bizzi Editor",
     tagline: "Cloud Native Drive",
-    price: 10,
+    price: 15,
     description:
       "Mount your cloud as a virtual SSD and edit videos and photos natively in any editing software. Bizzi Editor automatically generates proxies for smooth performance, then instantly relinks your timeline to full-resolution media with Bizzi Conform — all in one click.",
     features: [
@@ -228,10 +235,10 @@ export const powerUpAddons = [
     id: "fullframe",
     name: "Bizzi Full Frame",
     tagline: "Gallery Suite + Editor bundled",
-    price: 12,
+    price: 20,
     description:
       "The complete creative stack — galleries, invoicing, proofing, and NLE editing with Rec.709. Both Power Ups in one.",
-    bundleNote: "Save $3/mo vs buying separately",
+    bundleNote: "Save $3/mo vs buying Gallery Suite and Editor separately",
     features: [
       "Everything in Bizzi Gallery Suite",
       "Unlimited galleries, proofing & invoicing",
@@ -278,16 +285,16 @@ export const STORAGE_ADDONS: Record<
   Array<{ id: StorageAddonId; tb: number; price: number; upgradePrompt?: string }>
 > = {
   indie: [
-    { id: "indie_1", tb: 1, price: 8 },
-    { id: "indie_2", tb: 2, price: 15, upgradePrompt: "You're almost at Bizzi Network pricing. Upgrade for more features at the same cost." },
-    { id: "indie_3", tb: 3, price: 22, upgradePrompt: "You're almost at Bizzi Network pricing. Upgrade for more features at the same cost." },
+    { id: "indie_1", tb: 1, price: 10 },
+    { id: "indie_2", tb: 2, price: 20, upgradePrompt: "You're almost at Bizzi Network pricing. Upgrade for more features at the same cost." },
+    { id: "indie_3", tb: 3, price: 30, upgradePrompt: "You're almost at Bizzi Network pricing. Upgrade for more features at the same cost." },
   ],
   video: [
     { id: "video_1", tb: 1, price: 10 },
-    { id: "video_2", tb: 2, price: 19 },
-    { id: "video_3", tb: 3, price: 27 },
-    { id: "video_4", tb: 4, price: 34, upgradePrompt: "You're almost at Enterprise Creative pricing. Upgrade for more features." },
-    { id: "video_5", tb: 5, price: 40, upgradePrompt: "You're almost at Enterprise Creative pricing. Upgrade for more features." },
+    { id: "video_2", tb: 2, price: 20 },
+    { id: "video_3", tb: 3, price: 30 },
+    { id: "video_4", tb: 4, price: 40, upgradePrompt: "You're almost at Enterprise Creative pricing. Upgrade for more features." },
+    { id: "video_5", tb: 5, price: 50, upgradePrompt: "You're almost at Enterprise Creative pricing. Upgrade for more features." },
   ],
 };
 

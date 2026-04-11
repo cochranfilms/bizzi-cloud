@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import TopBar from "@/components/dashboard/TopBar";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
-import { ADDON_LABELS } from "@/lib/pricing-data";
+import { ADDON_LABELS, powerUpAddons } from "@/lib/pricing-data";
 import Image from "next/image";
 import {
   Building2,
@@ -29,6 +29,7 @@ import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
 import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
 import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
+import { createStripePortalSession } from "@/lib/stripe-portal-client";
 import SettingsHelpSupportSection from "@/components/settings/SettingsHelpSupportSection";
 import WorkspaceMigrationSection from "@/components/migration/WorkspaceMigrationSection";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
@@ -45,6 +46,12 @@ type EnterpriseSettingsSectionId =
 function EnterpriseSettingsPageInner() {
   const searchParams = useSearchParams();
   const { org, role, refetch } = useEnterprise();
+  const [orgPowerUpDraft, setOrgPowerUpDraft] = useState<string[]>([]);
+  const [orgPowerUpSaving, setOrgPowerUpSaving] = useState(false);
+  const [orgPowerUpError, setOrgPowerUpError] = useState<string | null>(null);
+  const [orgPowerUpSuccess, setOrgPowerUpSuccess] = useState(false);
+  const [orgPowerUpNeedsPaymentMethod, setOrgPowerUpNeedsPaymentMethod] = useState(false);
+  const [orgPortalLoading, setOrgPortalLoading] = useState(false);
   const { user } = useAuth();
   const { selectedWorkspaceId } = useCurrentFolder();
   const [companyName, setCompanyName] = useState(org?.name ?? "");
@@ -57,6 +64,71 @@ function EnterpriseSettingsPageInner() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAdmin = role === "admin";
+
+  useEffect(() => {
+    if (!org) return;
+    setOrgPowerUpDraft(org.addon_ids?.length ? [...org.addon_ids] : []);
+    setOrgPowerUpError(null);
+    setOrgPowerUpSuccess(false);
+    setOrgPowerUpNeedsPaymentMethod(false);
+  }, [org, org?.addon_ids]);
+
+  const handleOpenOrganizationBillingPortal = async () => {
+    if (!user || !org?.stripe_subscription_id || !isAdmin) return;
+    setOrgPortalLoading(true);
+    try {
+      const token = await user.getIdToken();
+      const result = await createStripePortalSession(token, {
+        customer_context: "organization",
+        return_path: "enterprise_settings",
+      });
+      if (result.ok) {
+        window.location.href = result.url;
+      } else {
+        setOrgPowerUpError(result.error);
+      }
+    } catch {
+      setOrgPowerUpError("Failed to open billing portal");
+    } finally {
+      setOrgPortalLoading(false);
+    }
+  };
+
+  const handleSaveOrgPowerUps = async () => {
+    if (!org || !isAdmin || !org.stripe_subscription_id) return;
+    setOrgPowerUpSaving(true);
+    setOrgPowerUpError(null);
+    setOrgPowerUpSuccess(false);
+    setOrgPowerUpNeedsPaymentMethod(false);
+    try {
+      const token = await user?.getIdToken();
+      const res = await fetch("/api/enterprise/update-addons", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ addon_ids: orgPowerUpDraft }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+        billing_error?: string;
+      };
+      if (!res.ok) {
+        if (data.billing_error === "payment_method") {
+          setOrgPowerUpNeedsPaymentMethod(true);
+        }
+        throw new Error(data.error ?? "Failed to update power ups");
+      }
+      setOrgPowerUpSuccess(true);
+      await refetch();
+    } catch (err) {
+      setOrgPowerUpError(err instanceof Error ? err.message : "Failed to update");
+    } finally {
+      setOrgPowerUpSaving(false);
+    }
+  };
 
   const navItems = useMemo(() => {
     const base: SettingsNavItem[] = [
@@ -385,28 +457,116 @@ function EnterpriseSettingsPageInner() {
                   <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
                     Storage and seats are managed by Bizzi. Contact our sales team to change your plan or add seats.
                   </p>
-                  <a
-                    href="mailto:sales@bizzicloud.io"
-                    className="inline-flex items-center gap-2 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-                  >
-                    Contact sales
-                  </a>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <a
+                      href="mailto:sales@bizzicloud.io"
+                      className="inline-flex items-center gap-2 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+                    >
+                      Contact sales
+                    </a>
+                    {org.stripe_subscription_id && isAdmin ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleOpenOrganizationBillingPortal()}
+                        disabled={orgPortalLoading}
+                        className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-800 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                      >
+                        {orgPortalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        Billing portal
+                      </button>
+                    ) : null}
+                  </div>
                   <div className="mt-6 border-t border-neutral-200 pt-6 dark:border-neutral-700">
                     <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-neutral-900 dark:text-white">
                       <Zap className="h-4 w-4 text-amber-500" />
                       Power ups
                     </h3>
-                    {org?.addon_ids && org.addon_ids.length > 0 ? (
+                    {org.stripe_subscription_id && isAdmin ? (
+                      <div className="space-y-3">
+                        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                          Add or change Power Ups on your organization subscription. Changes are prorated and charged
+                          to the payment method on file.
+                        </p>
+                        <div className="space-y-2">
+                          {powerUpAddons.map((addon) => (
+                            <label
+                              key={addon.id}
+                              className="flex cursor-pointer items-center gap-2"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={orgPowerUpDraft.includes(addon.id)}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  if (addon.id === "fullframe") {
+                                    setOrgPowerUpDraft(checked ? ["fullframe"] : []);
+                                  } else {
+                                    const hasFullframe = orgPowerUpDraft.includes("fullframe");
+                                    if (hasFullframe) {
+                                      setOrgPowerUpDraft(checked ? [addon.id] : []);
+                                    } else {
+                                      setOrgPowerUpDraft((prev) =>
+                                        checked
+                                          ? [...prev, addon.id]
+                                          : prev.filter((id) => id !== addon.id)
+                                      );
+                                    }
+                                  }
+                                }}
+                                disabled={orgPowerUpSaving}
+                                className="rounded border-neutral-300 text-[var(--enterprise-primary)] focus:ring-[var(--enterprise-primary)]"
+                              />
+                              <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                                {addon.name} — ${addon.price}/mo
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                          Full Frame includes both Gallery Suite and Editor.
+                        </p>
+                        {orgPowerUpError ? (
+                          <div className="space-y-2">
+                            <p className="text-sm text-red-600 dark:text-red-400">{orgPowerUpError}</p>
+                            {orgPowerUpNeedsPaymentMethod ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleOpenOrganizationBillingPortal()}
+                                disabled={orgPortalLoading}
+                                className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:bg-neutral-900 dark:text-red-200 dark:hover:bg-red-950/40"
+                              >
+                                {orgPortalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                Update payment method in Stripe
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {orgPowerUpSuccess ? (
+                          <p className="text-sm text-green-600 dark:text-green-400">Power ups updated.</p>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void handleSaveOrgPowerUps()}
+                          disabled={orgPowerUpSaving}
+                          className="inline-flex items-center gap-2 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                        >
+                          {orgPowerUpSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                          Save power ups
+                        </button>
+                      </div>
+                    ) : org?.addon_ids && org.addon_ids.length > 0 ? (
                       <p className="text-sm text-neutral-500 dark:text-neutral-400">
                         Your package includes:{" "}
-                        {org.addon_ids
-                          .map((id) => ADDON_LABELS[id] ?? id)
-                          .join(", ")}
-                        . Contact sales to add or change power ups.
+                        {org.addon_ids.map((id) => ADDON_LABELS[id] ?? id).join(", ")}.
+                        {!org.stripe_subscription_id
+                          ? " Contact sales to add or change power ups."
+                          : " Ask an organization admin to manage power ups in this section."}
                       </p>
                     ) : (
                       <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                        No power ups in your package. Contact sales to add Editor, Gallery Suite, or Full Frame.
+                        {org.stripe_subscription_id && !isAdmin
+                          ? "No power ups selected yet. An organization admin can add them here."
+                          : "No power ups in your package yet. Invoice-based organizations can add Gallery Suite, Editor, or Full Frame below once subscription billing is active; otherwise contact sales."}
                       </p>
                     )}
                   </div>

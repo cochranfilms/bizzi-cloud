@@ -1,10 +1,10 @@
 /** Client-safe enterprise constants (no Firebase/server imports). */
 
-/** 16TB total for enterprise orgs to distribute */
-export const ENTERPRISE_ORG_STORAGE_BYTES = 16 * 1024 * 1024 * 1024 * 1024;
+/** Default enterprise org pool size (self-serve org creation) */
+export const ENTERPRISE_ORG_STORAGE_BYTES = 15 * 1024 * 1024 * 1024 * 1024;
 
-/** 16TB allocation for all enterprise organization owners */
-export const ENTERPRISE_OWNER_STORAGE_BYTES = 16 * 1024 * 1024 * 1024 * 1024;
+/** Owner reference allocation aligned with default org pool */
+export const ENTERPRISE_OWNER_STORAGE_BYTES = 15 * 1024 * 1024 * 1024 * 1024;
 
 /** How seat quota interacts with the org pool (explicit policy). */
 export type OrganizationSeatQuotaMode = "fixed" | "org_unlimited";
