@@ -561,10 +561,12 @@ export default function UppyUploadModal({
       });
       if (fileData && !isMacosPackageMember) {
         const tier = previewPolicyRef.current;
+        // "large" must not use idle/eager previews: hundreds of video poster extractions or
+        // image object URLs exhaust memory and crash the tab before upload starts.
         const mode =
-          tier === "extreme"
+          tier === "extreme" || tier === "large"
             ? "skip"
-            : tier === "large" || ingestDeferPreviewsRef.current
+            : ingestDeferPreviewsRef.current
               ? "idle"
               : "eager";
         void attachUppyLocalPreview(

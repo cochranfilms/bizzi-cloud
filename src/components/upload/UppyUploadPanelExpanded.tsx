@@ -77,8 +77,8 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
           }}
         >
           {batchUiHint === "extreme"
-            ? "Large batch detected — optimizing upload view (minimal previews, throttled progress)."
-            : "Large batch — using lighter previews and queued file handling."}
+            ? "Large batch — smallest add chunks and throttled progress; local thumbnails off so the tab stays stable."
+            : "Large batch — local thumbnails off for stability; progress is throttled while files are added."}
         </div>
       ) : null}
       {(ingestPhase === "queued" || ingestPhase === "adding") && ingestTotal > 0 ? (

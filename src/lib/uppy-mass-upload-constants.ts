@@ -1,6 +1,6 @@
 /**
  * Thresholds for mass-upload UX/perf (chunking, throttling, previews).
- * Tuned for ~150–500 file drops; extreme tier reduces accidental browser death (e.g. 2000+ files).
+ * Tuned for ~100–500+ file drops; extreme tier reduces accidental browser death (e.g. 2000+ files).
  */
 
 export type BatchTier = "normal" | "large" | "extreme";
@@ -15,11 +15,14 @@ export function maxBatchTier(a: BatchTier, b: BatchTier): BatchTier {
   return batchTierRank(a) >= batchTierRank(b) ? a : b;
 }
 
-/** Soft “large batch” — idle previews, stronger progress throttles, optimization banner. */
+/**
+ * Soft “large batch” — no local thumbnails (grid icons only), stronger throttles, banner.
+ * Idle preview generation for 50–200 files still OOM’d tabs (video poster + image blob URLs).
+ */
 export const LARGE_BATCH_MIN = 50;
 
-/** Hard “extreme” — no previews, smallest chunks, strongest throttles, minimal cards. */
-export const EXTREME_BATCH_MIN = 200;
+/** Hard “extreme” — smallest chunks, strongest throttles (same preview policy as large). */
+export const EXTREME_BATCH_MIN = 100;
 
 export function getBatchTierFromCount(n: number): BatchTier {
   if (n >= EXTREME_BATCH_MIN) return "extreme";
@@ -30,9 +33,9 @@ export function getBatchTierFromCount(n: number): BatchTier {
 export function getIngestChunkSize(tier: BatchTier): number {
   switch (tier) {
     case "extreme":
-      return 20;
+      return 16;
     case "large":
-      return 30;
+      return 24;
     default:
       return 40;
   }

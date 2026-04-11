@@ -1,6 +1,6 @@
 # Uppy mass-upload hardening
 
-This document summarizes the client-side upload panel behavior for large batches (roughly 150–500 files, with a stronger “extreme” path beyond that). It is intended for developers and QA.
+This document summarizes the client-side upload panel behavior for large batches (roughly 100–500+ files, with a stronger “extreme” path beyond that). It is intended for developers and QA.
 
 ## Primary ingest path
 
@@ -13,8 +13,8 @@ This document summarizes the client-side upload panel behavior for large batches
 | Tier     | Min file count | Notes |
 | -------- | -------------- | ----- |
 | normal   | `< 50`         | Default previews and throttles. |
-| large    | `≥ 50`         | Idle previews, stronger throttles, banner. |
-| extreme  | `≥ 200`        | No image previews in the grid (icon-only), smallest chunks, strongest throttles. |
+| large    | `≥ 50`         | No local thumbnails (skip), stronger throttles, banner. |
+| extreme  | `≥ 100`        | Smallest add chunks, strongest throttles (same preview policy as large). |
 
 Source: `src/lib/uppy-mass-upload-constants.ts` (`LARGE_BATCH_MIN`, `EXTREME_BATCH_MIN`).
 
@@ -32,7 +32,7 @@ Session tier is the **maximum** tier seen in the modal (`maxBatchTier`), so a hu
 
 ## Previews and cleanup
 
-- **attachUppyLocalPreview** uses **eager** / **idle** / **skip** modes from tier (`file-added` in `UppyUploadModal.tsx`).
+- **attachUppyLocalPreview** uses **eager** / **idle** (small batches only) / **skip** (large + extreme tiers) (`file-added` in `UppyUploadModal.tsx`).
 - On close and Uppy teardown, **`revokeAllUppyPreviewsFromUppy`** revokes blob URLs; removing a file still revokes that file’s preview.
 
 ## Aggregate and gallery progress
@@ -52,14 +52,14 @@ Session tier is the **maximum** tier seen in the modal (`maxBatchTier`), so a hu
 
 1. **~50 files (large tier)**  
    - Panel stays responsive while adding.  
-   - Banner mentions large batch; previews may appear after idle.  
+   - Banner mentions large batch; grid uses **icons** (no local photo/video thumbnails).  
    - Grid scrolls smoothly; progress updates are not hyper-frequent.
 
 2. **~150 files**  
    - Same as above; confirm no long main-thread freeze during add.
 
-3. **~300+ files (extreme tier)**  
-   - Grid shows **icon-only** thumbs (no photos).  
+3. **~100+ files (extreme tier)**  
+   - Smaller add chunks; same icon-only grid as large.  
    - Ingest progress line (“Adding files…”) matches completion.
 
 4. **Interactivity**  
