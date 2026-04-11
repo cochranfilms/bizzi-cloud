@@ -98,8 +98,8 @@ int parse_args(int argc, char** argv, Options& o) {
       }
     } else if (std::strcmp(a, "--consumer-handoff-experiment") == 0 && i + 1 < argc) {
       o.consumer_handoff_experiment = std::atoi(argv[++i]);
-      if (o.consumer_handoff_experiment < 0 || o.consumer_handoff_experiment > 3) {
-        std::cerr << "--consumer-handoff-experiment must be 0..3\n";
+      if (o.consumer_handoff_experiment < 0 || o.consumer_handoff_experiment > 5) {
+        std::cerr << "--consumer-handoff-experiment must be 0..5\n";
         return EX_USAGE;
       }
     } else if (std::strcmp(a, "--handoff-move-pixels") == 0) {

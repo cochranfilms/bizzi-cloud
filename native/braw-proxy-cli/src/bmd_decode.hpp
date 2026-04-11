@@ -56,6 +56,8 @@ struct BrawDecodeConfig {
    *     producer modes that release COM on the callback thread — defer-COM mode 0 can leak if skipped).
    * 2 = copy pending_.pixels into `owned` instead of std::move (tests move/vector lifetime vs copy).
    * 3 = dequeue success but omit frame_ready_=false until next reset_wait (tests stale-ready window before on_frame).
+   * 4 = after dequeue, clone pixels into a fresh owner buffer before on_frame (tests cross-frame/local reuse).
+   * 5 = normal dequeue + on_frame, then aggressively scrub callback/local frame state before next iteration.
    */
   int consumer_handoff_experiment = 0;
   /**

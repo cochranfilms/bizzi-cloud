@@ -77,12 +77,14 @@ Workers should invoke **`/opt/braw-worker/bin/ffmpeg-braw`** (wrapper). Adjust `
 --handoff-move-pixels
                    Use std::move from `pending_.pixels` into the main-thread buffer (faster; was crash-prone on some Linux builds). Default is copy-based handoff (safe). Frame0 probe always uses copy.
 --consumer-handoff-experiment N
-                   Main-thread consumer bisect (0–3); composes with `--process-complete-experiment`. Frame0 probe forces0.
+                   Main-thread consumer bisect (0–5); composes with `--process-complete-experiment`. Frame0 probe forces0.
  0 — normal: wait → take_completed_frame → on_frame (uses copy unless `--handoff-move-pixels`)
                      1 — after wait_processed, skip take + on_frame (next `reset_wait` clears slot; avoid `--defer-success-release-main`)
                      2 — force copy even if `--handoff-move-pixels` (redundant when copy is default)
                      3 — dequeue OK but leave `frame_ready_` true until next `reset_wait` (stale-ready window through on_frame)
---debug            Also enables detailed `handoff-instrument` pointer/size/capacity traces around dequeue and on_frame.
+                     4 — clone to a fresh owned buffer before `on_frame` (tests per-frame owned-buffer reuse)
+                     5 — after `on_frame`, aggressively scrub callback/local frame state before next iteration
+--debug            Also enables detailed `handoff-instrument` pointer/size/capacity traces around dequeue, on_frame, and cross-frame reuse comparisons.
 --help             Print usage and exit 0
 ```
 
