@@ -367,6 +367,12 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   std::atomic<ULONG> ref_count_{1};
   std::mutex mu_;
   std::condition_variable cv_;
+  /**
+   * Consumer gate: wait_processed() blocks until true; take_completed_frame() requires true to dequeue.
+   * Writers: ProcessComplete success path, ReadComplete/error paths. Cleared: reset_wait, take_completed_frame
+   * (success/error), ReadComplete error branches. Invariant: when true for success, pending_.valid && plane dims
+   * should match pending_.pixels (see take_completed_frame size check).
+   */
   bool frame_ready_ = false;
   HRESULT last_hr_ = S_OK;
   FrameHandoffPacket pending_{};
@@ -395,6 +401,10 @@ static void release_deferred_callback_hold(DecodeCallback*& callback, uint64_t f
   callback = nullptr;
 }
 
+/**
+ * Unblocks when frame_ready_ is true. packet_ok additionally requires last_hr_ success and pending_.valid — producer
+ * should publish those under mu_ before setting frame_ready_ (modes 11/12 deliberately split timing for experiments).
+ */
 bool DecodeCallback::wait_processed(uint64_t frame_index) {
   std::fprintf(stderr, "braw-proxy-cli: consumer: enter wait_processed (frame=%llu timeout_sec=%d tid=%zu)\n",
     static_cast<unsigned long long>(frame_index), handoff_timeout_sec_, braw_trace_tid_hash());
@@ -1049,7 +1059,8 @@ void DecodeCallback::ProcessComplete(
   const int pce = self->process_complete_experiment_;
   const bool notify_consumers = (pce == 0 || pce == 4);
   const bool defer_com = self->defer_success_release_to_main_ && pce == 0;
-  const bool publish_bisect_no_notify = (pce == 3 || (pce >= 5 && pce <= 10));
+  const bool publish_bisect_no_notify =
+    (pce == 3 || (pce >= 5 && pce <= 10) || pce == 11 || pce == 12);
 
   if (pce == 2) {
     std::fprintf(stderr,
@@ -1077,6 +1088,8 @@ void DecodeCallback::ProcessComplete(
     int publish_last_step = -1;
     if (pce == 0 || pce == 4 || pce == 3)
       publish_last_step = 5;
+    else if (pce == 11 || pce == 12)
+      publish_last_step = 4; /** Step 5 (frame_ready) applied after 1st unlock; see pce 11/12 below. */
     else if (pce >= 5 && pce <= 10)
       publish_last_step = pce - 5;
     if (publish_last_step >= 0) {
@@ -1103,7 +1116,7 @@ void DecodeCallback::ProcessComplete(
         "[ffmpeg-braw trace] ProcessComplete: publish bisect — pce=%d publish_last_step=%d; cv notify_all skipped "
         "(tid=%zu)\n",
         pce, publish_last_step, braw_trace_tid_hash());
-      if (publish_last_step >= 0 && publish_last_step < 5) {
+      if (publish_last_step >= 0 && publish_last_step < 5 && pce != 11 && pce != 12) {
         std::fprintf(stderr,
           "[ffmpeg-braw trace] ProcessComplete: publish bisect WARNING: incomplete handoff (step<5) — wait_processed "
           "may block (tid=%zu)\n",
@@ -1117,6 +1130,17 @@ void DecodeCallback::ProcessComplete(
       std::fprintf(stderr, "[ffmpeg-braw trace] handoff: after notify (tid=%zu)\n", braw_trace_tid_hash());
       std::fflush(stderr);
     }
+  }
+  if (pce == 12) {
+    {
+      std::lock_guard<std::mutex> lk(self->mu_);
+      self->frame_ready_ = true;
+    }
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] ProcessComplete: bisect-12 — frame_ready_=true after 1st unlock, before COM Release "
+      "(tid=%zu)\n",
+      braw_trace_tid_hash());
+    std::fflush(stderr);
   }
   if (defer_com) {
     const char* defer_ctx = same_identity
@@ -1142,6 +1166,12 @@ void DecodeCallback::ProcessComplete(
     if (pce == 3 || pce == 10)
       strategy_ctx = same_identity ? "ProcessComplete(bisect-3 publish no notify job Release only)"
                                    : "ProcessComplete(bisect-3 publish no notify image then job Release)";
+    else if (pce == 11)
+      strategy_ctx = same_identity ? "ProcessComplete(bisect-11 ready-after-COM job Release only)"
+                                   : "ProcessComplete(bisect-11 ready-after-COM image then job Release)";
+    else if (pce == 12)
+      strategy_ctx = same_identity ? "ProcessComplete(bisect-12 ready-before-COM job Release only)"
+                                   : "ProcessComplete(bisect-12 ready-before-COM image then job Release)";
     else if (pce >= 5 && pce <= 9) {
       static thread_local char bisect_ctx[160];
       const int st = pce - 5;
@@ -1159,6 +1189,18 @@ void DecodeCallback::ProcessComplete(
       release_bmd_sdk_pair_logged(job, nullptr, strategy_ctx, frame_index, self->next_release_seq());
     else
       release_bmd_sdk_pair_logged(job, processedImage, strategy_ctx, frame_index, self->next_release_seq());
+  }
+
+  if (pce == 11) {
+    {
+      std::lock_guard<std::mutex> lk(self->mu_);
+      self->frame_ready_ = true;
+    }
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] ProcessComplete: bisect-11 — frame_ready_=true after COM Release on callback thread "
+      "(tid=%zu)\n",
+      braw_trace_tid_hash());
+    std::fflush(stderr);
   }
 
   bool pending_valid = false;

@@ -45,6 +45,8 @@ struct BrawDecodeConfig {
    *   8 = + pending_.valid = true
    *   9 = + last_hr_ = S_OK
    *  10 = + frame_ready_ = true (equivalent publish body to mode 3)
+   *  11 = same publish as 9 in first lock, then COM Release, then frame_ready_=true (readiness after SDK objects freed).
+   *  12 = same as 11 but frame_ready_=true in a 2nd lock before COM Release (readiness while SDK objects still alive).
    */
   int process_complete_experiment = 0;
 };

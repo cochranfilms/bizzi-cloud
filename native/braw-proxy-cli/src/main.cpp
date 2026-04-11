@@ -43,7 +43,7 @@ struct Options {
   bool defer_success_release_to_main = false;
   /** Maps to BrawDecodeConfig::process_complete_experiment == 1 if process_complete_experiment unset. */
   bool flush_unwind_probe = false;
-  /** <0 = unset; else 0..10 see BrawDecodeConfig::process_complete_experiment */
+  /** <0 = unset; else 0..12 see BrawDecodeConfig::process_complete_experiment */
   int process_complete_experiment = -1;
 };
 
@@ -88,8 +88,8 @@ int parse_args(int argc, char** argv, Options& o) {
       o.flush_unwind_probe = true;
     } else if (std::strcmp(a, "--process-complete-experiment") == 0 && i + 1 < argc) {
       o.process_complete_experiment = std::atoi(argv[++i]);
-      if (o.process_complete_experiment < 0 || o.process_complete_experiment > 10) {
-        std::cerr << "--process-complete-experiment must be 0..10\n";
+      if (o.process_complete_experiment < 0 || o.process_complete_experiment > 12) {
+        std::cerr << "--process-complete-experiment must be 0..12\n";
         return EX_USAGE;
       }
     } else if (std::strcmp(a, "--help") == 0 || std::strcmp(a, "-h") == 0) {
