@@ -17,6 +17,10 @@ import { isRawVideoFile } from "@/lib/raw-video";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
 import sharp from "sharp";
+import {
+  VIDEO_POSTER_FFMPEG_TIMEOUT_MS,
+  videoPosterFrameFfmpegArgsPipeInput,
+} from "@/lib/video-poster-frame";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -175,34 +179,10 @@ export async function GET(request: Request) {
       return new NextResponse("Video thumbnail not available", { status: 503 });
     }
 
-    const FFMPEG_TIMEOUT_MS = 45000;
-
     const runFfmpeg = async (seekSeconds: number): Promise<Buffer> => {
       return new Promise((resolve, reject) => {
         const stderrChunks: string[] = [];
-        const args = [
-          "-y",
-          "-nostdin",
-          "-probesize",
-          "32K",
-          "-analyzeduration",
-          "500000",
-          "-ss",
-          String(seekSeconds),
-          "-t",
-          "5",
-          "-i",
-          presignedUrl,
-          "-vframes",
-          "1",
-          "-vf",
-          "scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2",
-          "-f",
-          "image2",
-          "-q:v",
-          "3",
-          "pipe:1",
-        ];
+        const args = videoPosterFrameFfmpegArgsPipeInput(presignedUrl, seekSeconds);
 
         const proc = spawn(ffmpegBin, args, {
           stdio: ["ignore", "pipe", "pipe"],
@@ -218,7 +198,7 @@ export async function GET(request: Request) {
         const timeoutId = setTimeout(() => {
           proc.kill("SIGKILL");
           reject(new Error("FFmpeg timeout"));
-        }, FFMPEG_TIMEOUT_MS);
+        }, VIDEO_POSTER_FFMPEG_TIMEOUT_MS);
 
         proc.on("close", (code, signal) => {
           clearTimeout(timeoutId);

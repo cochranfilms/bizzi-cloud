@@ -10,6 +10,7 @@ import {
   createPresignedUploadUrl,
   getObjectMetadata,
   getProxyObjectKey,
+  getVideoThumbnailCacheKey,
   isB2Configured,
   objectExists,
 } from "@/lib/b2";
@@ -355,6 +356,10 @@ export interface StandardClaimResult {
   proxyUploadUrl: string;
   proxyUploadUrlExpiresInSec: number;
   proxyUploadHeaders: Record<string, string>;
+  /** Presigned PUT for grid video poster JPEG (`getVideoThumbnailCacheKey`); populated after proxy for workers. */
+  videoPosterUploadUrl: string;
+  videoPosterUploadUrlExpiresInSec: number;
+  videoPosterUploadHeaders: Record<string, string>;
   lease_expires_at: string;
   max_attempt_deadline_at: string;
   heartbeat_interval_ms: number;
@@ -563,6 +568,8 @@ export async function claimProxyJob(
 
     const sourceDownloadUrl = await createPresignedDownloadUrl(tryClaim.objectKey, ttl);
     const proxyUploadUrl = await createPresignedUploadUrl(tryClaim.proxyKey, "video/mp4", ttl);
+    const posterKey = getVideoThumbnailCacheKey(tryClaim.objectKey);
+    const videoPosterUploadUrl = await createPresignedUploadUrl(posterKey, "image/jpeg", ttl);
 
     await updateBackupFileProjection(tryClaim.backupFileId, {
       proxy_status: "processing",
@@ -587,6 +594,12 @@ export async function claimProxyJob(
       proxyUploadUrlExpiresInSec: ttl,
       proxyUploadHeaders: {
         "Content-Type": "video/mp4",
+        "x-amz-server-side-encryption": "AES256",
+      },
+      videoPosterUploadUrl,
+      videoPosterUploadUrlExpiresInSec: ttl,
+      videoPosterUploadHeaders: {
+        "Content-Type": "image/jpeg",
         "x-amz-server-side-encryption": "AES256",
       },
       lease_expires_at: leaseUntil,

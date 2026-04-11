@@ -9,6 +9,9 @@
  *   FFMPEG_PATH         — optional; else PATH `ffmpeg`, else ffmpeg-static
  *   FFPROBE_PATH        — optional; else PATH `ffprobe`, else ffprobe-static (logged at startup; transcoding uses ffmpeg only)
  *
+ * After each successful proxy PUT, uploads a 480×270 poster JPEG to the same B2 key as GET video-thumbnail
+ * (claim includes videoPosterUploadUrl). Failures are logged only (non-fatal).
+ *
  * Example:
  *   BIZZI_API_BASE=https://example.com MEDIA_STANDARD_WORKER_SECRET=xxx node scripts/standard-proxy-worker.mjs
  */
@@ -26,6 +29,7 @@ import {
   postWorkerJson,
   transportBackoffMs,
 } from "./media-worker-http.mjs";
+import { tryUploadVideoPosterAfterProxy } from "./video-poster-upload.mjs";
 
 const base = (process.env.BIZZI_API_BASE || "").replace(/\/$/, "");
 const secret = process.env.MEDIA_STANDARD_WORKER_SECRET || "";
@@ -398,6 +402,14 @@ async function processJob(payload) {
       progress_pct: 90,
     });
     await putFile(uploadUrl, tmpPath, uploadHeaders);
+    await tryUploadVideoPosterAfterProxy(
+      putFile,
+      ffmpegBin,
+      tmpPath,
+      payload.videoPosterUploadUrl,
+      payload.videoPosterUploadHeaders,
+      { job_id: job.id }
+    );
     const st = await stat(tmpPath);
     const proxyDurationSec = await ffprobeDurationSeconds(tmpPath);
     await postJson("/api/workers/standard-proxy/complete", {

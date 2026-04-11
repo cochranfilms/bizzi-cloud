@@ -16,6 +16,8 @@
  *   ENCODER_FFMPEG_PATH         — stock ffmpeg for BRAW_PROXY_CLI_BIN internal encode (default: /usr/bin/ffmpeg)
  *   BRAW_PROXY_WIDTH            — width passed to CLI (default: 1280)
  *
+ * After proxy PUT, uploads grid poster JPEG (H.264 decode via ENCODER_FFMPEG_PATH when using CLI, else FFMPEG_BRAW_PATH).
+ *
  * Example:
  *   BIZZI_API_BASE=https://example.com MEDIA_BRAW_WORKER_SECRET=xxx FFMPEG_BRAW_PATH=/opt/braw-worker/bin/ffmpeg-braw node scripts/braw-proxy-worker.mjs
  */
@@ -33,6 +35,7 @@ import {
   postWorkerJson,
   transportBackoffMs,
 } from "./media-worker-http.mjs";
+import { tryUploadVideoPosterAfterProxy } from "./video-poster-upload.mjs";
 
 const base = (process.env.BIZZI_API_BASE || "").replace(/\/$/, "");
 const secret = process.env.MEDIA_BRAW_WORKER_SECRET || "";
@@ -452,6 +455,15 @@ async function processJob(payload) {
       progress_pct: 90,
     });
     await putFile(uploadUrl, tmpPath, uploadHeaders);
+    const posterFfmpegBin = brawCliBin ? encoderFfmpeg : ffmpegBrawPath;
+    await tryUploadVideoPosterAfterProxy(
+      putFile,
+      posterFfmpegBin,
+      tmpPath,
+      payload.videoPosterUploadUrl,
+      payload.videoPosterUploadHeaders,
+      { job_id: job.id }
+    );
     const st = await stat(tmpPath);
     const proxyDurationSec = await ffprobeDurationSeconds(tmpPath);
     await postJson("/api/workers/braw-proxy/complete", {

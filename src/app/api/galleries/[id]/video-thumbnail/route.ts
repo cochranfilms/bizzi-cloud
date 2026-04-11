@@ -21,6 +21,10 @@ import { isRawVideoFile } from "@/lib/raw-video";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
 import sharp from "sharp";
+import {
+  VIDEO_POSTER_FFMPEG_TIMEOUT_MS,
+  videoPosterFrameFfmpegArgsPipeInput,
+} from "@/lib/video-poster-frame";
 
 export const maxDuration = 60;
 
@@ -169,17 +173,7 @@ export async function GET(
     const runFfmpeg = async (seekSeconds: number): Promise<Buffer> =>
       new Promise((resolve, reject) => {
         const stderrChunks: string[] = [];
-        const args = [
-          "-y", "-nostdin",
-          "-probesize", "32K",
-          "-analyzeduration", "500000",
-          "-ss", String(seekSeconds),
-          "-t", "5",
-          "-i", presignedUrl,
-          "-vframes", "1",
-          "-vf", "scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2",
-          "-f", "image2", "-q:v", "3", "pipe:1",
-        ];
+        const args = videoPosterFrameFfmpegArgsPipeInput(presignedUrl, seekSeconds);
         const proc = spawn(ffmpegBin, args, {
           stdio: ["ignore", "pipe", "pipe"],
           env: { ...process.env, FFREPORT: "file=/dev/null:level=0" },
@@ -190,7 +184,7 @@ export async function GET(
         const timeoutId = setTimeout(() => {
           proc.kill("SIGKILL");
           reject(new Error("FFmpeg timeout"));
-        }, 45000);
+        }, VIDEO_POSTER_FFMPEG_TIMEOUT_MS);
         proc.on("close", (code) => {
           clearTimeout(timeoutId);
           if (code === 0) resolve(Buffer.concat(chunks));
