@@ -45,6 +45,12 @@ Workers should invoke **`/opt/braw-worker/bin/ffmpeg-braw`** (wrapper). Adjust `
 
 ## Usage
 
+**Consumer handoff (default):** each decoded frame uses a **new heap-allocated frame bundle** on the main thread and an
+**exclusive pixel buffer** every `take_completed_frame` (memcpy from the pending packet into a fresh `std::vector`).
+This matches the stable path found on Ubuntu (isolated per-iteration ownership of the container and pixels). Reusing a
+single stack `std::vector` and/or the legacy transfer into a long-lived buffer is available only via explicit
+`--repro-legacy-*` flags for bisects.
+
 ```text
 --input PATH       Source .braw (required)
 --output PATH      Destination .mp4 (required)
@@ -52,6 +58,13 @@ Workers should invoke **`/opt/braw-worker/bin/ffmpeg-braw`** (wrapper). Adjust `
 --crf N            x264 CRF 0–51 (default 23)
 --ffmpeg PATH      FFmpeg binary (default /usr/bin/ffmpeg)
 --max-frames N     Decode at most N frames (debug / smoke tests; optional)
+--repro-legacy-consumer-stack-bundle
+                   Repro only: reuse one stack-allocated `std::vector`/frame slot across iterations (pre-fix path;
+                   crash-prone on some Linux SDK builds). Default off: heap `CompletedFrame` per iteration.
+--repro-legacy-reuse-pixel-buffer
+                   Repro only: skip the default exclusive buffer path in `take_completed_frame` (copy/move into the
+                   caller-owned vector instead). Default off: fresh buffer + memcpy each frame. Compose with
+                   `--handoff-move-pixels` to test move semantics.
 --defer-success-release-main
                    Production-ish path: defer success-path COM Release to the main-thread safe point in
                    `take_completed_frame()` (ignored for bisect modes 3–4, which always release COM on the callback thread).
@@ -75,18 +88,19 @@ Workers should invoke **`/opt/braw-worker/bin/ffmpeg-braw`** (wrapper). Adjust `
                     11 — publish through step 9 under lock, COM Release, then set `frame_ready_` (readiness after COM)
                     12 — publish through step 9, set `frame_ready_` before COM Release (two lock windows; readiness while COM alive)
 --handoff-move-pixels
-                   Use std::move from `pending_.pixels` into the main-thread buffer (faster; was crash-prone on some Linux builds). Default is copy-based handoff (safe). Frame0 probe always uses copy.
---fresh-owned-per-frame
-                   In `take_completed_frame`, allocate a new pixel vector sized exactly to the pending packet and memcpy (ignores copy vs move handoff for the transfer). Tests cross-iteration reuse of the caller-owned vector. Frame0 probe forces this off.
+                   Ignored for pixel transfer on the default safe consumer path (exclusive buffer + memcpy every frame).
+                   When `--repro-legacy-reuse-pixel-buffer` is set, this selects std::move from `pending_.pixels` into the
+                   caller buffer instead of copy (faster; crash-prone on some Linux builds). Frame0 probe always uses copy
+                   into the safe path.
 --consumer-handoff-experiment N
                    Main-thread consumer bisect (0–5); composes with `--process-complete-experiment`. Frame0 probe forces0.
- 0 — normal: wait → take_completed_frame → on_frame (uses copy unless `--handoff-move-pixels`)
+ 0 — normal: wait → take_completed_frame → on_frame (default: heap bundle + exclusive buffer; with `--repro-legacy-reuse-pixel-buffer`, honors `--handoff-move-pixels`)
                      1 — after wait_processed, skip take + on_frame (next `reset_wait` clears slot; avoid `--defer-success-release-main`)
                      2 — force copy even if `--handoff-move-pixels` (redundant when copy is default)
                      3 — dequeue OK but leave `frame_ready_` true until next `reset_wait` (stale-ready window through on_frame)
                      4 — clone to a fresh owned buffer before `on_frame` (tests per-frame owned-buffer reuse)
                      5 — after `on_frame`, aggressively scrub callback/local frame state before next iteration
---debug            Also enables detailed `handoff-instrument` pointer/size/capacity traces around dequeue, on_frame, and cross-frame reuse comparisons.
+--debug            Verbose stderr: `handoff-instrument` traces, per-frame consumer steps, and a line reporting `consumer_ownership_mode=SAFE_DEFAULT` vs `LEGACY_REUSE` (any `--repro-legacy-*` flag).
 --help             Print usage and exit 0
 ```
 

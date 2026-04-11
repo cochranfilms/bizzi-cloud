@@ -67,15 +67,17 @@ struct BrawDecodeConfig {
    */
   bool handoff_copy_pixels = true;
   /**
-   * When true, take_completed_frame allocates a new pixel vector sized exactly to pending_.pixels and memcpy-copies
-   * bytes (no reuse of caller-owned capacity). --fresh-owned-per-frame
+   * Repro/debug only: reuse one stack-allocated std::vector across decode iterations (pre-production consumer path;
+   * crash-prone on some Linux SDK builds). Default false: heap-allocate a new CompletedFrame bundle each iteration.
+   * --repro-legacy-consumer-stack-bundle
    */
-  bool fresh_owned_per_frame = false;
+  bool repro_legacy_consumer_stack_bundle = false;
   /**
-   * When true, each decode iteration heap-allocates a new CompletedFrame (see bmd_decode.cpp) for dequeue/on_frame
-   * instead of reusing the stack slot. --fresh-frame-object-per-iteration
+   * Repro/debug only: in take_completed_frame, avoid the production path that memcpy-copies into a fresh exclusive
+   * buffer every frame (uses copy/move into the caller-owned vector instead). Default false = exclusive buffer each
+   * frame. --repro-legacy-reuse-pixel-buffer
    */
-  bool fresh_frame_object_per_iteration = false;
+  bool repro_legacy_reuse_pixel_buffer = false;
 };
 
 struct ClipMeta {

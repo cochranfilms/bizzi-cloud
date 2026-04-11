@@ -49,10 +49,10 @@ struct Options {
   int consumer_handoff_experiment = 0;
   /** Default true: copy pending pixels in take_completed_frame (see BrawDecodeConfig::handoff_copy_pixels). */
   bool handoff_copy_pixels = true;
-  /** See BrawDecodeConfig::fresh_owned_per_frame */
-  bool fresh_owned_per_frame = false;
-  /** See BrawDecodeConfig::fresh_frame_object_per_iteration */
-  bool fresh_frame_object_per_iteration = false;
+  /** See BrawDecodeConfig::repro_legacy_consumer_stack_bundle */
+  bool repro_legacy_consumer_stack_bundle = false;
+  /** See BrawDecodeConfig::repro_legacy_reuse_pixel_buffer */
+  bool repro_legacy_reuse_pixel_buffer = false;
 };
 
 void print_usage(const char* argv0) {
@@ -61,7 +61,7 @@ void print_usage(const char* argv0) {
                " [--width 1280] [--crf 23] [--ffmpeg /usr/bin/ffmpeg] [--max-frames N]"
                " [--debug] [--handoff-timeout-sec SEC] [--defer-success-release-main] [--flush-unwind-probe]"
                " [--process-complete-experiment N] [--consumer-handoff-experiment N] [--handoff-move-pixels]"
-               " [--fresh-owned-per-frame] [--fresh-frame-object-per-iteration]\n";
+               " [--repro-legacy-consumer-stack-bundle] [--repro-legacy-reuse-pixel-buffer]\n";
 }
 
 int parse_args(int argc, char** argv, Options& o) {
@@ -109,10 +109,10 @@ int parse_args(int argc, char** argv, Options& o) {
       }
     } else if (std::strcmp(a, "--handoff-move-pixels") == 0) {
       o.handoff_copy_pixels = false;
-    } else if (std::strcmp(a, "--fresh-owned-per-frame") == 0) {
-      o.fresh_owned_per_frame = true;
-    } else if (std::strcmp(a, "--fresh-frame-object-per-iteration") == 0) {
-      o.fresh_frame_object_per_iteration = true;
+    } else if (std::strcmp(a, "--repro-legacy-consumer-stack-bundle") == 0) {
+      o.repro_legacy_consumer_stack_bundle = true;
+    } else if (std::strcmp(a, "--repro-legacy-reuse-pixel-buffer") == 0) {
+      o.repro_legacy_reuse_pixel_buffer = true;
     } else if (std::strcmp(a, "--help") == 0 || std::strcmp(a, "-h") == 0) {
       print_usage(argv[0]);
       return kParseHelp;
@@ -191,13 +191,22 @@ int main(int argc, char** argv) {
   std::fprintf(stderr,
     "braw-proxy-cli: main: parsed args max_frames=%d width=%d crf=%d handoff_timeout_sec=%d debug=%d "
     "defer_success_release_main=%d process_complete_experiment=%d consumer_handoff_experiment=%d "
-    "handoff_copy_pixels=%d fresh_owned_per_frame=%d fresh_frame_object_per_iteration=%d\n",
+    "handoff_copy_pixels=%d repro_legacy_consumer_stack_bundle=%d repro_legacy_reuse_pixel_buffer=%d\n",
     opt.max_frames, opt.width, opt.crf, opt.handoff_timeout_sec, opt.debug ? 1 : 0,
     opt.defer_success_release_to_main ? 1 : 0,
     opt.process_complete_experiment >= 0 ? opt.process_complete_experiment : (opt.flush_unwind_probe ? 1 : 0),
-    opt.consumer_handoff_experiment, opt.handoff_copy_pixels ? 1 : 0, opt.fresh_owned_per_frame ? 1 : 0,
-    opt.fresh_frame_object_per_iteration ? 1 : 0);
+    opt.consumer_handoff_experiment, opt.handoff_copy_pixels ? 1 : 0,
+    opt.repro_legacy_consumer_stack_bundle ? 1 : 0, opt.repro_legacy_reuse_pixel_buffer ? 1 : 0);
   std::fflush(stderr);
+  if (opt.debug) {
+    const bool legacy = opt.repro_legacy_consumer_stack_bundle || opt.repro_legacy_reuse_pixel_buffer;
+    std::fprintf(stderr,
+      "braw-proxy-cli: main: consumer_ownership_mode=%s repro_legacy_consumer_stack_bundle=%d "
+      "repro_legacy_reuse_pixel_buffer=%d\n",
+      legacy ? "LEGACY_REUSE" : "SAFE_DEFAULT", opt.repro_legacy_consumer_stack_bundle ? 1 : 0,
+      opt.repro_legacy_reuse_pixel_buffer ? 1 : 0);
+    std::fflush(stderr);
+  }
 
   ClipMeta meta;
   const int pr = braw_probe_clip(opt.input, meta);
@@ -214,8 +223,8 @@ int main(int argc, char** argv) {
     : (opt.flush_unwind_probe ? 1 : 0);
   probe_cfg.consumer_handoff_experiment = opt.consumer_handoff_experiment;
   probe_cfg.handoff_copy_pixels = opt.handoff_copy_pixels;
-  probe_cfg.fresh_owned_per_frame = false;
-  probe_cfg.fresh_frame_object_per_iteration = false;
+  probe_cfg.repro_legacy_consumer_stack_bundle = false;
+  probe_cfg.repro_legacy_reuse_pixel_buffer = false;
 
   uint32_t dec_w = 0;
   uint32_t dec_h = 0;
@@ -330,8 +339,8 @@ int main(int argc, char** argv) {
     : (opt.flush_unwind_probe ? 1 : 0);
   dcfg.consumer_handoff_experiment = opt.consumer_handoff_experiment;
   dcfg.handoff_copy_pixels = opt.handoff_copy_pixels;
-  dcfg.fresh_owned_per_frame = opt.fresh_owned_per_frame;
-  dcfg.fresh_frame_object_per_iteration = opt.fresh_frame_object_per_iteration;
+  dcfg.repro_legacy_consumer_stack_bundle = opt.repro_legacy_consumer_stack_bundle;
+  dcfg.repro_legacy_reuse_pixel_buffer = opt.repro_legacy_reuse_pixel_buffer;
   std::fprintf(stderr, "braw-proxy-cli: main: starting full decode with max_frames=%d\n", dcfg.max_frames);
   std::fflush(stderr);
 
