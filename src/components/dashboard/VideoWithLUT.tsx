@@ -108,7 +108,7 @@ interface VideoWithLUTProps {
   frameless?: boolean;
   /** With showLUTOption, place LUT toolbar beside the video on large screens */
   sideBySideLut?: boolean;
-  /** Fired once when the video has decoded frames and dimensions (for preview fade-in). */
+  /** Fired once when the video reaches HAVE_CURRENT_DATA+ (for preview fade-in). */
   onDisplayReady?: () => void;
   /**
    * For large heroes / backdrops with HLS: start at the highest rung so ABR does not stick on a
@@ -1011,7 +1011,8 @@ export default function VideoWithLUT({
     if (!onDisplayReady || displayReadyFiredRef.current) return;
     const v = videoRef.current;
     if (!v || v.readyState < 2) return;
-    if (v.videoWidth <= 0 || v.videoHeight <= 0) return;
+    // HLS / proxy streams often reach HAVE_CURRENT_DATA before intrinsic dimensions are non-zero;
+    // FilePreviewModal gates the whole stage on this callback (opacity), so never require2D size here.
     displayReadyFiredRef.current = true;
     onDisplayReady();
   }, [onDisplayReady]);
@@ -1025,11 +1026,15 @@ export default function VideoWithLUT({
     if (!video || !videoSrc) return;
     const onReady = () => fireDisplayReady();
     video.addEventListener("loadeddata", onReady);
+    video.addEventListener("loadedmetadata", onReady);
     video.addEventListener("canplay", onReady);
+    video.addEventListener("playing", onReady);
     if (video.readyState >= 2) queueMicrotask(onReady);
     return () => {
       video.removeEventListener("loadeddata", onReady);
+      video.removeEventListener("loadedmetadata", onReady);
       video.removeEventListener("canplay", onReady);
+      video.removeEventListener("playing", onReady);
     };
   }, [videoSrc, fireDisplayReady]);
 
@@ -1253,7 +1258,7 @@ export default function VideoWithLUT({
           src={!videoSrc.includes(".m3u8") ? videoSrc : undefined}
           crossOrigin="anonymous"
           controls={false}
-          preload={proxyOnlyPlayback ? "none" : "metadata"}
+          preload={proxyOnlyPlayback && compactPreview ? "none" : "metadata"}
           playsInline
           muted={compactPreview ? true : undefined}
           autoPlay={compactPreview ? true : undefined}
