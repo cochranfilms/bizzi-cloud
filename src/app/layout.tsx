@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { GeistSans } from "geist/font/sans";
+import { GeistSans } from "@/lib/geist-sans-font";
 import { GeistMono } from "@/lib/geist-mono-font";
 import { TransferProvider } from "@/context/TransferContext";
 import { AuthProvider } from "@/context/AuthContext";

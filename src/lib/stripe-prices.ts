@@ -22,6 +22,26 @@ import {
 
 const FIRESTORE_COLLECTION = "stripe_prices";
 
+/** Validate cached/env Stripe price still matches expected recurring amount (avoids stale IDs after price changes). */
+async function isStripeRecurringPriceValid(
+  priceId: string,
+  expectedCents: number,
+  interval: "month" | "year"
+): Promise<boolean> {
+  try {
+    const stripe = getStripeInstance();
+    const price = await stripe.prices.retrieve(priceId);
+    return (
+      price.unit_amount === expectedCents &&
+      price.currency === "usd" &&
+      price.recurring?.interval === interval &&
+      price.active !== false
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Plan pricing: [monthly cents, annual cents] */
 const PLAN_PRICING: Record<Exclude<PlanId, "free">, { name: string; monthly: number; annual: number }> = {
   solo: { name: "Bizzi Creator", monthly: 1200, annual: annualPriceUsdFromMonthly(12) * 100 },
@@ -70,8 +90,21 @@ export async function getOrCreateStripePrice(
   planId: Exclude<PlanId, "free">,
   billing: BillingCycle
 ): Promise<string> {
+  const pricing = PLAN_PRICING[planId];
+  if (!pricing) throw new Error(`Unknown plan: ${planId}`);
+
+  const amountCents = billing === "monthly" ? pricing.monthly : pricing.annual;
+  const interval = billing === "monthly" ? "month" : "year";
+
   const envPrice = getEnvFallback(planId, billing);
-  if (envPrice) return envPrice;
+  if (envPrice) {
+    if (await isStripeRecurringPriceValid(envPrice, amountCents, interval)) {
+      return envPrice;
+    }
+    console.warn(
+      `[Stripe] STRIPE_PRICE_* for ${planId} ${billing} has wrong amount or interval; creating new price at ${amountCents}¢`
+    );
+  }
 
   const docId = `${planId}_${billing}`;
   const db = getAdminFirestore();
@@ -80,14 +113,10 @@ export async function getOrCreateStripePrice(
 
   if (snap.exists) {
     const priceId = snap.data()?.price_id as string | undefined;
-    if (priceId) return priceId;
+    if (priceId && (await isStripeRecurringPriceValid(priceId, amountCents, interval))) {
+      return priceId;
+    }
   }
-
-  const pricing = PLAN_PRICING[planId];
-  if (!pricing) throw new Error(`Unknown plan: ${planId}`);
-
-  const amountCents = billing === "monthly" ? pricing.monthly : pricing.annual;
-  const interval = billing === "monthly" ? "month" : "year";
 
   const stripe = getStripeInstance();
 
@@ -110,6 +139,7 @@ export async function getOrCreateStripePrice(
       product_id: product.id,
       plan_id: planId,
       billing,
+      unit_amount_cents: amountCents,
       updated_at: new Date().toISOString(),
     });
 
@@ -191,16 +221,23 @@ export async function getOrCreateStripeAddonPrice(addonId: AddonId): Promise<str
 
 /** Get or create Stripe price for storage add-on. Caches in Firestore. */
 export async function getOrCreateStripeStorageAddonPrice(storageAddonId: StorageAddonId): Promise<string> {
+  const pricing = STORAGE_ADDON_PRICING[storageAddonId];
+  if (!pricing) throw new Error(`Unknown storage addon: ${storageAddonId}`);
+
   const docId = `storage_${storageAddonId}`;
   const db = getAdminFirestore();
   const docRef = db.collection(FIRESTORE_COLLECTION).doc(docId);
   const snap = await docRef.get();
   if (snap.exists) {
     const priceId = snap.data()?.price_id as string | undefined;
-    if (priceId) return priceId;
+    if (
+      priceId &&
+      (await isStripeRecurringPriceValid(priceId, pricing.monthly, "month"))
+    ) {
+      return priceId;
+    }
   }
-  const pricing = STORAGE_ADDON_PRICING[storageAddonId];
-  if (!pricing) throw new Error(`Unknown storage addon: ${storageAddonId}`);
+
   const stripe = getStripeInstance();
   const product = await stripe.products.create({
     name: pricing.name,
@@ -271,8 +308,16 @@ export async function getOrCreateStripeEnterpriseStoragePrice(
 
 /** Extra seat price (legacy org line item). Get or create Stripe price. Caches in Firestore. */
 export async function getOrCreateStripeSeatPrice(): Promise<string> {
+  const expectedCents = 1000;
   const envPrice = getEnvSeatFallback();
-  if (envPrice) return envPrice;
+  if (envPrice) {
+    if (await isStripeRecurringPriceValid(envPrice, expectedCents, "month")) {
+      return envPrice;
+    }
+    console.warn(
+      `[Stripe] STRIPE_PRICE_SEAT has wrong amount; creating new seat price at $${(expectedCents / 100).toFixed(2)}/mo`
+    );
+  }
 
   const docId = "seat";
   const db = getAdminFirestore();
@@ -281,7 +326,12 @@ export async function getOrCreateStripeSeatPrice(): Promise<string> {
 
   if (snap.exists) {
     const priceId = snap.data()?.price_id as string | undefined;
-    if (priceId) return priceId;
+    if (
+      priceId &&
+      (await isStripeRecurringPriceValid(priceId, expectedCents, "month"))
+    ) {
+      return priceId;
+    }
   }
 
   const stripe = getStripeInstance();
@@ -294,7 +344,7 @@ export async function getOrCreateStripeSeatPrice(): Promise<string> {
 
     const price = await stripe.prices.create({
       product: product.id,
-      unit_amount: 1000, // $10/mo
+      unit_amount: expectedCents,
       currency: "usd",
       recurring: { interval: "month" },
       metadata: { type: "seat" },
@@ -329,8 +379,21 @@ export async function getOrCreatePersonalTeamSeatPrice(
   level: PersonalTeamSeatAccess,
   billing: BillingCycle
 ): Promise<string> {
+  const amountCents =
+    billing === "monthly"
+      ? teamSeatMonthlyCentsPerSeat(level)
+      : teamSeatAnnualCentsPerSeat(level);
+  const interval = billing === "monthly" ? "month" : "year";
+
   const envPrice = getEnvPersonalTeamSeatPriceId(level, billing);
-  if (envPrice) return envPrice;
+  if (envPrice) {
+    if (await isStripeRecurringPriceValid(envPrice, amountCents, interval)) {
+      return envPrice;
+    }
+    console.warn(
+      `[Stripe] Team seat env price for ${level} ${billing} is stale; creating new price at ${amountCents}¢`
+    );
+  }
 
   const docId = `team_seat_${level}_${billing}`;
   const db = getAdminFirestore();
@@ -339,14 +402,11 @@ export async function getOrCreatePersonalTeamSeatPrice(
 
   if (snap.exists) {
     const priceId = snap.data()?.price_id as string | undefined;
-    if (priceId) return priceId;
+    if (priceId && (await isStripeRecurringPriceValid(priceId, amountCents, interval))) {
+      return priceId;
+    }
   }
 
-  const amountCents =
-    billing === "monthly"
-      ? teamSeatMonthlyCentsPerSeat(level)
-      : teamSeatAnnualCentsPerSeat(level);
-  const interval = billing === "monthly" ? "month" : "year";
   const name = PERSONAL_TEAM_SEAT_LABELS[level];
   const stripe = getStripeInstance();
 
@@ -373,6 +433,7 @@ export async function getOrCreatePersonalTeamSeatPrice(
       product_id: product.id,
       personal_team_seat_access: level,
       billing,
+      unit_amount_cents: amountCents,
       updated_at: new Date().toISOString(),
     });
 

@@ -490,17 +490,7 @@ export default function PricingSection() {
 
         {/* Power Ups — product-style tiles (summaries on hover / + control) */}
         <div className="mb-20 md:mb-24">
-          <PowerUpProductTiles
-            addons={powerUpAddons.map(
-              ({ id, name, price, accentColor, bundleNote }) => ({
-                id,
-                name,
-                price,
-                accentColor,
-                bundleNote,
-              })
-            )}
-          />
+          <PowerUpProductTiles />
           <p className="mx-auto mt-12 max-w-lg text-center text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 md:mt-14">
             Stack freely. Cancel anytime. Add-ons billed monthly.
           </p>
