@@ -346,6 +346,7 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   void set_debug_trace(bool on) { debug_trace_ = on; }
   void set_defer_success_release_to_main(bool on) { defer_success_release_to_main_ = on; }
   void set_process_complete_experiment(int mode) { process_complete_experiment_ = mode; }
+  void set_consumer_handoff_experiment(int mode) { consumer_handoff_experiment_ = mode; }
 
   bool wait_processed(uint64_t frame_index);
 
@@ -383,6 +384,7 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   bool debug_trace_ = false;
   bool defer_success_release_to_main_ = false;
   int process_complete_experiment_ = 0;
+  int consumer_handoff_experiment_ = 0;
   std::atomic<uint64_t> active_frame_index_{kUnknownFrameIndex};
   std::atomic<uint64_t> release_seq_{1};
 
@@ -486,6 +488,7 @@ uint64_t DecodeCallback::take_active_frame_index() {
 uint64_t DecodeCallback::next_release_seq() { return release_seq_.fetch_add(1, std::memory_order_relaxed); }
 
 void DecodeCallback::reset_wait() {
+  /** Per-iteration boundary: clears prior frame_ready_/pending_ so wait_processed cannot see stale readiness. */
   IBlackmagicRawJob* j = nullptr;
   IBlackmagicRawProcessedImage* im = nullptr;
   DecodeCallback* cb = nullptr;
@@ -584,12 +587,28 @@ bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t&
         pending_ = FrameHandoffPacket{};
         frame_ready_ = false;
       } else {
-        owned = std::move(pending_.pixels);
+        const int che = consumer_handoff_experiment_;
+        if (che == 2) {
+          owned = pending_.pixels;
+          std::fprintf(stderr,
+            "[ffmpeg-braw trace] take_completed_frame: consumer bisect-2 — copy pixels to owned (no std::move) "
+            "(tid=%zu)\n",
+            braw_trace_tid_hash());
+        } else {
+          owned = std::move(pending_.pixels);
+          std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: packet moved to owner; stealing deferred SDK ptrs "
+                                        "(tid=%zu)\n",
+            braw_trace_tid_hash());
+        }
         pending_ = FrameHandoffPacket{};
-        frame_ready_ = false;
-        std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: packet moved to owner; stealing deferred SDK ptrs "
-                                      "(tid=%zu)\n",
-          braw_trace_tid_hash());
+        if (che == 3) {
+          std::fprintf(stderr,
+            "[ffmpeg-braw trace] take_completed_frame: consumer bisect-3 — leaving frame_ready_=true until next "
+            "reset_wait (tid=%zu)\n",
+            braw_trace_tid_hash());
+        } else {
+          frame_ready_ = false;
+        }
         std::fflush(stderr);
         rel_j = deferred_process_job_;
         rel_im = deferred_process_image_;
@@ -1337,9 +1356,10 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   std::fprintf(stderr, "[ffmpeg-braw trace] 1 entering braw_decode_frames\n");
   std::fprintf(stderr,
     "braw-proxy-cli: decode: config target_width=%d max_frames=%d clip_frames=%llu "
-    "defer_success_release_main=%d process_complete_experiment=%d tid=%zu\n",
+    "defer_success_release_main=%d process_complete_experiment=%d consumer_handoff_experiment=%d tid=%zu\n",
     cfg.target_width, cfg.max_frames, static_cast<unsigned long long>(meta.frame_count),
-    cfg.defer_success_release_to_main ? 1 : 0, cfg.process_complete_experiment, braw_trace_tid_hash());
+    cfg.defer_success_release_to_main ? 1 : 0, cfg.process_complete_experiment, cfg.consumer_handoff_experiment,
+    braw_trace_tid_hash());
   std::fflush(stderr);
 
   IBlackmagicRawFactory* factory = nullptr;
@@ -1381,6 +1401,7 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   callback->set_debug_trace(cfg.debug_trace);
   callback->set_defer_success_release_to_main(cfg.defer_success_release_to_main);
   callback->set_process_complete_experiment(cfg.process_complete_experiment);
+  callback->set_consumer_handoff_experiment(cfg.consumer_handoff_experiment);
 
   hr = codec->SetCallback(callback);
   if (FAILED(hr)) {
@@ -1422,6 +1443,12 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
     braw_trace_tid_hash());
   std::fflush(stderr);
 
+  /**
+   * One frame cycle (success, typical immediate-COM producer): reset_wait clears prior slot → set_active_frame →
+   * Submit read job → FlushJobs (ProcessComplete publishes pixel packet under mu_, sets frame_ready_, releases COM) →
+   * wait_processed sees readiness → take_completed_frame moves pending_ out and clears readiness (or bisect variants) →
+   * on_frame writes RGBA. Next iteration begins with reset_wait again.
+   */
   for (uint64_t i = 0; i <= last_frame; ++i) {
     std::fprintf(stderr,
       "braw-proxy-cli: loop: iteration ENTER (frame_index=%llu / last=%llu tid=%zu)\n",
@@ -1508,6 +1535,15 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
     std::fprintf(stderr, "[ffmpeg-braw trace] main after wait_processed (frame=%llu tid=%zu)\n",
       static_cast<unsigned long long>(i), braw_trace_tid_hash());
     std::fflush(stderr);
+
+    if (cfg.consumer_handoff_experiment == 1) {
+      std::fprintf(stderr,
+        "braw-proxy-cli: consumer bisect-1: skip take_completed_frame + on_frame (reset_wait on next iteration clears "
+        "slot; avoid defer-COM producer or SDK objects may leak) (frame=%llu tid=%zu)\n",
+        static_cast<unsigned long long>(i), braw_trace_tid_hash());
+      std::fflush(stderr);
+      continue;
+    }
 
     std::vector<uint8_t> frame_owned;
     uint32_t rb = 0;
@@ -1597,6 +1633,7 @@ int braw_probe_decoded_frame0_size(const std::string& input_path, const BrawDeco
   out_h = 0;
   BrawDecodeConfig one = cfg;
   one.max_frames = 1;
+  one.consumer_handoff_experiment = 0; /** Probe needs take_completed_frame + on_frame to capture dimensions. */
   std::fprintf(stderr,
     "braw-proxy-cli: probe: forcing max_frames=1 for decoded frame0 size probe (caller requested max_frames=%d)\n",
     cfg.max_frames);

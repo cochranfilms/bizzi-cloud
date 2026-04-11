@@ -74,6 +74,12 @@ Workers should invoke **`/opt/braw-worker/bin/ffmpeg-braw`** (wrapper). Adjust `
                     10 — + `frame_ready_` (same publish body as mode 3)
                     11 — publish through step 9 under lock, COM Release, then set `frame_ready_` (readiness after COM)
                     12 — publish through step 9, set `frame_ready_` before COM Release (two lock windows; readiness while COM alive)
+--consumer-handoff-experiment N
+                   Main-thread consumer bisect (0–3); composes with `--process-complete-experiment`. Frame0 probe forces0.
+ 0 — normal: wait → take_completed_frame (move) → on_frame
+                     1 — after wait_processed, skip take + on_frame (next `reset_wait` clears slot; avoid `--defer-success-release-main`)
+                     2 — copy pixels in take_completed_frame instead of std::move
+                     3 — dequeue OK but leave `frame_ready_` true until next `reset_wait` (stale-ready window through on_frame)
 --help             Print usage and exit 0
 ```
 

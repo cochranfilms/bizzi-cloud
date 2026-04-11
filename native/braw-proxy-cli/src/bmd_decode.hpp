@@ -49,6 +49,15 @@ struct BrawDecodeConfig {
    *  12 = same as 11 but frame_ready_=true in a 2nd lock before COM Release (readiness while SDK objects still alive).
    */
   int process_complete_experiment = 0;
+  /**
+   * Consumer-side handoff bisect (composes with process_complete_experiment). Main-thread path only.
+   * 0 = normal: wait_processed → take_completed_frame → on_frame.
+   * 1 = after wait_processed, skip take_completed_frame and on_frame (next reset_wait clears pending; use with
+   *     producer modes that release COM on the callback thread — defer-COM mode 0 can leak if skipped).
+   * 2 = copy pending_.pixels into `owned` instead of std::move (tests move/vector lifetime vs copy).
+   * 3 = dequeue success but omit frame_ready_=false until next reset_wait (tests stale-ready window before on_frame).
+   */
+  int consumer_handoff_experiment = 0;
 };
 
 struct ClipMeta {

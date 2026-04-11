@@ -45,6 +45,8 @@ struct Options {
   bool flush_unwind_probe = false;
   /** <0 = unset; else 0..12 see BrawDecodeConfig::process_complete_experiment */
   int process_complete_experiment = -1;
+  /** See BrawDecodeConfig::consumer_handoff_experiment (default 0). */
+  int consumer_handoff_experiment = 0;
 };
 
 void print_usage(const char* argv0) {
@@ -52,7 +54,7 @@ void print_usage(const char* argv0) {
             << " --input /path/to/file.braw --output /path/to/out.mp4"
                " [--width 1280] [--crf 23] [--ffmpeg /usr/bin/ffmpeg] [--max-frames N]"
                " [--debug] [--handoff-timeout-sec SEC] [--defer-success-release-main] [--flush-unwind-probe]"
-               " [--process-complete-experiment N]\n";
+               " [--process-complete-experiment N] [--consumer-handoff-experiment N]\n";
 }
 
 int parse_args(int argc, char** argv, Options& o) {
@@ -90,6 +92,12 @@ int parse_args(int argc, char** argv, Options& o) {
       o.process_complete_experiment = std::atoi(argv[++i]);
       if (o.process_complete_experiment < 0 || o.process_complete_experiment > 12) {
         std::cerr << "--process-complete-experiment must be 0..12\n";
+        return EX_USAGE;
+      }
+    } else if (std::strcmp(a, "--consumer-handoff-experiment") == 0 && i + 1 < argc) {
+      o.consumer_handoff_experiment = std::atoi(argv[++i]);
+      if (o.consumer_handoff_experiment < 0 || o.consumer_handoff_experiment > 3) {
+        std::cerr << "--consumer-handoff-experiment must be 0..3\n";
         return EX_USAGE;
       }
     } else if (std::strcmp(a, "--help") == 0 || std::strcmp(a, "-h") == 0) {
@@ -169,10 +177,11 @@ int main(int argc, char** argv) {
   std::fprintf(stderr, "braw-proxy-cli: main: pid=%d (CLI process)\n", static_cast<int>(getpid()));
   std::fprintf(stderr,
     "braw-proxy-cli: main: parsed args max_frames=%d width=%d crf=%d handoff_timeout_sec=%d debug=%d "
-    "defer_success_release_main=%d process_complete_experiment=%d\n",
+    "defer_success_release_main=%d process_complete_experiment=%d consumer_handoff_experiment=%d\n",
     opt.max_frames, opt.width, opt.crf, opt.handoff_timeout_sec, opt.debug ? 1 : 0,
     opt.defer_success_release_to_main ? 1 : 0,
-    opt.process_complete_experiment >= 0 ? opt.process_complete_experiment : (opt.flush_unwind_probe ? 1 : 0));
+    opt.process_complete_experiment >= 0 ? opt.process_complete_experiment : (opt.flush_unwind_probe ? 1 : 0),
+    opt.consumer_handoff_experiment);
   std::fflush(stderr);
 
   ClipMeta meta;
@@ -188,6 +197,7 @@ int main(int argc, char** argv) {
   probe_cfg.process_complete_experiment = opt.process_complete_experiment >= 0
     ? opt.process_complete_experiment
     : (opt.flush_unwind_probe ? 1 : 0);
+  probe_cfg.consumer_handoff_experiment = opt.consumer_handoff_experiment;
 
   uint32_t dec_w = 0;
   uint32_t dec_h = 0;
@@ -300,6 +310,7 @@ int main(int argc, char** argv) {
   dcfg.process_complete_experiment = opt.process_complete_experiment >= 0
     ? opt.process_complete_experiment
     : (opt.flush_unwind_probe ? 1 : 0);
+  dcfg.consumer_handoff_experiment = opt.consumer_handoff_experiment;
   std::fprintf(stderr, "braw-proxy-cli: main: starting full decode with max_frames=%d\n", dcfg.max_frames);
   std::fflush(stderr);
 
