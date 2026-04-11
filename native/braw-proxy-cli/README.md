@@ -45,11 +45,11 @@ Workers should invoke **`/opt/braw-worker/bin/ffmpeg-braw`** (wrapper). Adjust `
 
 ## Usage
 
-**Consumer handoff (default):** each decoded frame uses a **new heap-allocated frame bundle** on the main thread and an
-**exclusive pixel buffer** every `take_completed_frame` (memcpy from the pending packet into a fresh `std::vector`).
-This matches the stable path found on Ubuntu (isolated per-iteration ownership of the container and pixels). Reusing a
-single stack `std::vector` and/or the legacy transfer into a long-lived buffer is available only via explicit
-`--repro-legacy-*` flags for bisects.
+**Consumer handoff (default):** each decoded frame allocates a **new heap `CompletedFrame`**, dequeues pixels only through
+**`take_completed_frame_production_fresh`** (always a **new `std::vector` + `memcpy`** from pending — no shared legacy
+transfer branch), then **`unique_ptr::reset()`** before the next frame. This is the same control flow as the Ubuntu
+known-good combo, not an approximate shortcut. Reusing a stack bundle and/or legacy pixel transfer is **opt-in** via
+`--repro-legacy-*` (unsafe / repro only).
 
 ```text
 --input PATH       Source .braw (required)
@@ -100,7 +100,7 @@ single stack `std::vector` and/or the legacy transfer into a long-lived buffer i
                      3 — dequeue OK but leave `frame_ready_` true until next `reset_wait` (stale-ready window through on_frame)
                      4 — clone to a fresh owned buffer before `on_frame` (tests per-frame owned-buffer reuse)
                      5 — after `on_frame`, aggressively scrub callback/local frame state before next iteration
---debug            Verbose stderr: `handoff-instrument` traces, per-frame consumer steps, and a line reporting `consumer_ownership_mode=SAFE_DEFAULT` vs `LEGACY_REUSE` (any `--repro-legacy-*` flag).
+--debug            Verbose stderr: `handoff-instrument` traces, per-frame consumer steps, and startup lines reporting `consumer_ownership_mode=SAFE_PRODUCTION_FRESH_PER_FRAME` vs `LEGACY_REPRO` (any `--repro-legacy-*` flag).
 --help             Print usage and exit 0
 ```
 

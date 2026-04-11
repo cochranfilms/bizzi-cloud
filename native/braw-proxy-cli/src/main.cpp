@@ -203,7 +203,7 @@ int main(int argc, char** argv) {
     std::fprintf(stderr,
       "braw-proxy-cli: main: consumer_ownership_mode=%s repro_legacy_consumer_stack_bundle=%d "
       "repro_legacy_reuse_pixel_buffer=%d\n",
-      legacy ? "LEGACY_REUSE" : "SAFE_DEFAULT", opt.repro_legacy_consumer_stack_bundle ? 1 : 0,
+      legacy ? "LEGACY_REPRO" : "SAFE_PRODUCTION_FRESH_PER_FRAME", opt.repro_legacy_consumer_stack_bundle ? 1 : 0,
       opt.repro_legacy_reuse_pixel_buffer ? 1 : 0);
     std::fflush(stderr);
   }
