@@ -1,13 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Upload } from "lucide-react";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
-import { useEnterprise } from "@/context/EnterpriseContext";
+import { useEnterprise, useEnterpriseOptional } from "@/context/EnterpriseContext";
 import { useUppyUpload } from "@/context/UppyUploadContext";
 import { useAuth } from "@/context/AuthContext";
+import { useThemeResolved } from "@/context/ThemeContext";
+import { useDashboardAppearanceOptional } from "@/context/DashboardAppearanceContext";
+import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 import { collectFilesFromDataTransfer } from "@/lib/browser-data-transfer-files";
 import {
   resolveUploadDestination,
@@ -16,6 +26,15 @@ import {
 } from "@/lib/upload-destination-resolve";
 import { creatorRawClientAllowsUploadAttempt } from "@/lib/creator-raw-upload-policy";
 import { CREATOR_RAW_REJECTION_MESSAGES } from "@/lib/creator-raw-media-config";
+import { resolveImmersiveWorkspaceAccent } from "@/lib/immersive-workspace-accent";
+import { hexToRgb, immersiveAppVariantBackdropStyle } from "@/lib/immersive-app-backdrop";
+
+/** Same veil as `ImmersiveFilePreviewShell` (app variant). */
+const IMMERSIVE_BACKDROP_BLUR = "blur(56px) saturate(1.08)";
+
+/** Lucide / `UploadCloudProgress` cloud silhouette (viewBox 0 0 24 24). */
+const DROP_OVERLAY_CLOUD_D =
+  "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z";
 
 /**
  * Global drag-and-drop zone. Overlay copy and drop target both come from
@@ -35,6 +54,46 @@ export default function GlobalDropZone() {
   const { org } = useEnterprise();
   const { user } = useAuth();
   const openPanel = useUppyUpload()?.openPanel;
+  const themeResolved = useThemeResolved();
+  const isDark = themeResolved === "dark";
+  const appearance = useDashboardAppearanceOptional();
+  const enterpriseOptional = useEnterpriseOptional();
+  const teamWs = usePersonalTeamWorkspace();
+
+  const workspaceAccent = useMemo(
+    () =>
+      resolveImmersiveWorkspaceAccent({
+        pathname,
+        orgTheme: enterpriseOptional?.org?.theme ?? enterpriseOptional?.organization?.theme,
+        teamThemeId: teamWs?.teamThemeId,
+        dashboardAccentHex: appearance?.accentColor ?? "#00BFFF",
+      }),
+    [
+      pathname,
+      enterpriseOptional?.org?.theme,
+      enterpriseOptional?.organization?.theme,
+      teamWs?.teamThemeId,
+      appearance?.accentColor,
+    ]
+  );
+
+  const accentRgb = useMemo(() => {
+    const rgb = hexToRgb(workspaceAccent);
+    return rgb ? `${rgb.r},${rgb.g},${rgb.b}` : "0,191,255";
+  }, [workspaceAccent]);
+
+  const immersiveDropBackdropStyle = useMemo((): CSSProperties => {
+    const layers = immersiveAppVariantBackdropStyle({
+      accentRgb,
+      isDark,
+      pathname,
+    });
+    return {
+      WebkitBackdropFilter: IMMERSIVE_BACKDROP_BLUR,
+      backdropFilter: IMMERSIVE_BACKDROP_BLUR,
+      ...layers,
+    };
+  }, [accentRgb, isDark, pathname]);
 
   const [isDragging, setIsDragging] = useState(false);
   const isDraggingRef = useRef(false);
@@ -49,14 +108,12 @@ export default function GlobalDropZone() {
   );
 
   const isActiveRoute = pathname
-    ? (pathname === "/dashboard" ||
-        pathname === "/dashboard/files" ||
-        pathname?.startsWith("/dashboard/creator") ||
-        pathname?.startsWith("/enterprise") ||
-        pathname?.startsWith("/desktop/app") ||
-        pathname?.startsWith("/team/")) &&
-      !pathname?.includes("/galleries/") &&
-      !pathname?.includes("/transfers")
+    ? (pathname.startsWith("/dashboard") ||
+        pathname.startsWith("/enterprise") ||
+        pathname.startsWith("/desktop/app") ||
+        pathname.startsWith("/team/")) &&
+      !pathname.includes("/galleries/") &&
+      !pathname.includes("/transfers")
     : false;
 
   const isEnterpriseFilesNoDrive =
@@ -372,36 +429,90 @@ export default function GlobalDropZone() {
   const nestedStorageDrop =
     subtitle.startsWith("Storage Drive:") || title.includes("Storage folder");
 
+  const cloudFill: string = nestedStorageDrop
+    ? isDark
+      ? `rgba(${accentRgb},0.14)`
+      : "rgba(255,255,255,0.72)"
+    : isDark
+      ? "rgba(255,255,255,0.08)"
+      : "rgba(255,255,255,0.55)";
+
+  const cloudStroke: string = nestedStorageDrop
+    ? isDark
+      ? `rgba(${accentRgb},0.88)`
+      : `rgba(${accentRgb},0.65)`
+    : isDark
+      ? "rgba(255,255,255,0.5)"
+      : `rgba(${accentRgb},0.4)`;
+
+  const cloudShellFilter: string = nestedStorageDrop
+    ? isDark
+      ? `drop-shadow(0 0 0.5px rgba(${accentRgb},0.35)) drop-shadow(0 24px 48px rgba(0,0,0,0.52))`
+      : `drop-shadow(0 0 0.5px rgba(${accentRgb},0.22)) drop-shadow(0 20px 40px rgba(15,23,42,0.12))`
+    : isDark
+      ? `drop-shadow(0 0 0.5px rgba(${accentRgb},0.2))`
+      : `drop-shadow(0 0 0.5px rgba(${accentRgb},0.12))`;
+
+  const titleClass = nestedStorageDrop
+    ? isDark
+      ? "text-white"
+      : "text-neutral-900"
+    : isDark
+      ? "text-white"
+      : "text-neutral-900";
+
+  const subtitleClass = nestedStorageDrop
+    ? isDark
+      ? "text-white/90"
+      : "text-neutral-700"
+    : isDark
+      ? "text-white/85"
+      : "text-neutral-600";
+
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/65 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center"
+      style={immersiveDropBackdropStyle}
       aria-hidden
     >
       <div
-        className={`mx-4 flex max-w-lg flex-col items-center gap-5 rounded-2xl border-2 border-dashed px-8 py-10 sm:px-12 ${
-          nestedStorageDrop
-            ? "border-sky-400/90 bg-sky-950/75 shadow-[0_0_0_1px_rgba(56,189,248,0.35),0_24px_64px_-12px_rgba(0,0,0,0.55)]"
-            : "border-white/55 bg-white/10"
-        }`}
+        className="relative mx-4 w-[min(92vw,26.5rem)]"
+        style={{ filter: cloudShellFilter }}
       >
-        <Upload
-          className={`h-14 w-14 sm:h-16 sm:w-16 ${nestedStorageDrop ? "text-sky-200" : "text-white"}`}
-          strokeWidth={1.5}
-        />
-        <p
-          className={`text-center text-xl font-bold tracking-tight sm:text-2xl ${
-            nestedStorageDrop ? "text-sky-50" : "text-white"
-          }`}
+        <svg
+          viewBox="0 0 24 24"
+          className="block h-auto w-full"
+          preserveAspectRatio="xMidYMid meet"
+          aria-hidden
         >
-          {title}
-        </p>
-        <p
-          className={`max-w-md text-center text-base font-semibold leading-snug sm:text-lg ${
-            nestedStorageDrop ? "text-sky-100" : "text-white/85"
-          }`}
-        >
-          {subtitle}
-        </p>
+          <path d={DROP_OVERLAY_CLOUD_D} fill={cloudFill} />
+          <path
+            d={DROP_OVERLAY_CLOUD_D}
+            fill="none"
+            stroke={cloudStroke}
+            strokeWidth={0.22}
+            strokeDasharray="1.15 0.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 py-8 text-center sm:gap-5 sm:px-10 sm:py-10">
+          <Upload
+            className={`h-14 w-14 shrink-0 sm:h-16 sm:w-16 ${titleClass}`}
+            strokeWidth={1.5}
+          />
+          <p
+            className={`max-w-[16rem] text-center text-xl font-bold tracking-tight sm:max-w-md sm:text-2xl ${titleClass}`}
+          >
+            {title}
+          </p>
+          <p
+            className={`max-w-[16rem] text-center text-base font-semibold leading-snug sm:max-w-md sm:text-lg ${subtitleClass}`}
+          >
+            {subtitle}
+          </p>
+        </div>
       </div>
     </div>
   );

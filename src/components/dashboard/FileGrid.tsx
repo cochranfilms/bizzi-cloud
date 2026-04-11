@@ -11,7 +11,7 @@ import {
   Filter,
   Images,
   Loader2,
-  Upload,
+  Cloud,
 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
@@ -3107,7 +3107,7 @@ export default function FileGrid({
                 aria-label={isGalleryMediaDrive ? "Empty gallery media drive" : "Empty drive"}
                 className="w-full max-w-xl rounded-2xl border-2 border-dashed border-neutral-200 bg-gradient-to-b from-neutral-50 to-white px-6 py-12 text-center shadow-sm dark:border-neutral-600 dark:from-neutral-900/55 dark:to-neutral-950/90 sm:px-10 sm:py-14"
               >
-                <Upload
+                <Cloud
                   className="mx-auto mb-5 h-10 w-10 text-bizzi-blue dark:text-bizzi-cyan"
                   strokeWidth={1.5}
                   aria-hidden
@@ -3149,9 +3149,6 @@ export default function FileGrid({
                         {" "}
                         — or drag and drop to upload.
                       </span>
-                    </p>
-                    <p className="mt-5 text-sm text-neutral-500 dark:text-neutral-500">
-                      We recommend dragging and dropping large folders.
                     </p>
                   </>
                 )}
