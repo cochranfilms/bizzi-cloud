@@ -89,7 +89,7 @@ export async function createChangePlanCheckoutSession(
 
   for (const addonId of addonIds) {
     try {
-      const addonPriceId = await getOrCreateStripeAddonPrice(addonId);
+      const addonPriceId = await getOrCreateStripeAddonPrice(addonId, billing);
       lineItems.push({ price: addonPriceId, quantity: 1 });
     } catch (err) {
       console.error("[Stripe checkout-change-plan] Failed to get addon price:", err);
@@ -104,7 +104,10 @@ export async function createChangePlanCheckoutSession(
     const expectedPlan = STORAGE_ADDON_PLAN_MAP[storageAddonId];
     if (expectedPlan && planId === expectedPlan) {
       try {
-        const storageAddonPriceId = await getOrCreateStripeStorageAddonPrice(storageAddonId as StorageAddonId);
+        const storageAddonPriceId = await getOrCreateStripeStorageAddonPrice(
+          storageAddonId as StorageAddonId,
+          billing
+        );
         lineItems.push({ price: storageAddonPriceId, quantity: 1 });
       } catch (err) {
         console.error("[Stripe checkout-change-plan] Failed to get storage addon price:", err);

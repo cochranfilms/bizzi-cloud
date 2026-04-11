@@ -140,7 +140,7 @@ export async function POST(request: Request) {
 
   for (const aid of addonIds) {
     try {
-      const addonPriceId = await getOrCreateStripeAddonPrice(aid);
+      const addonPriceId = await getOrCreateStripeAddonPrice(aid, billing);
       lineItems.push({ price: addonPriceId, quantity: 1 });
     } catch (err) {
       console.error("[Stripe checkout] Failed to get/create addon price:", err);
@@ -161,7 +161,10 @@ export async function POST(request: Request) {
   };
   if (storageAddonId && VALID_STORAGE_ADDON_IDS.includes(storageAddonId) && STORAGE_ADDON_PLAN_MAP[storageAddonId] === planId) {
     try {
-      const storagePriceId = await getOrCreateStripeStorageAddonPrice(storageAddonId as import("@/lib/pricing-data").StorageAddonId);
+      const storagePriceId = await getOrCreateStripeStorageAddonPrice(
+        storageAddonId as import("@/lib/pricing-data").StorageAddonId,
+        billing
+      );
       lineItems.push({ price: storagePriceId, quantity: 1 });
     } catch (err) {
       console.error("[Stripe checkout] Failed to get storage addon price:", err);

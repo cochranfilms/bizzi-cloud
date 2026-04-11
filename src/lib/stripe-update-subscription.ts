@@ -162,6 +162,7 @@ export async function updateSubscriptionWithProration(
   const currentBilling: BillingCycle =
     planItem.price?.recurring?.interval === "year" ? "annual" : "monthly";
   const billingToUse = input.billing || currentBilling;
+  const desiredRecurringInterval = billingToUse === "annual" ? "year" : "month";
 
   let newPlanPriceId: string;
   try {
@@ -189,17 +190,31 @@ export async function updateSubscriptionWithProration(
   for (const item of addonItems) {
     const addonId = getAddonIdFromItem(item);
     if (!addonId) continue;
-    if (targetAddonIds.has(addonId as AddonId)) {
+    if (!targetAddonIds.has(addonId as AddonId)) {
+      itemsToUpdate.push({ id: item.id, deleted: true });
+      continue;
+    }
+    const interval = item.price?.recurring?.interval;
+    if (interval === desiredRecurringInterval) {
       itemsToUpdate.push({ id: item.id });
     } else {
-      itemsToUpdate.push({ id: item.id, deleted: true });
+      try {
+        const addonPriceId = await getOrCreateStripeAddonPrice(addonId as AddonId, billingToUse);
+        itemsToUpdate.push({ id: item.id, price: addonPriceId });
+      } catch (err) {
+        console.error("[Stripe update-subscription] Failed to get addon price:", err);
+        return NextResponse.json(
+          { error: "Failed to update. Please try again.", code: "ADDON_PRICE_FAILED" },
+          { status: 500 }
+        );
+      }
     }
   }
 
   for (const addonId of targetAddonIds) {
     if (!existingAddonIds.has(addonId)) {
       try {
-        const addonPriceId = await getOrCreateStripeAddonPrice(addonId);
+        const addonPriceId = await getOrCreateStripeAddonPrice(addonId, billingToUse);
         itemsToUpdate.push({ price: addonPriceId, quantity: 1 });
       } catch (err) {
         console.error("[Stripe update-subscription] Failed to get addon price:", err);
@@ -221,13 +236,25 @@ export async function updateSubscriptionWithProration(
       ? getResolvedStorageAddonIdFromItem(planId as PlanId, storageAddonItems[0]) ??
         getStorageAddonIdFromItem(storageAddonItems[0])
       : null;
-  if (currentStorageAddonId !== targetStorageAddonId) {
+  const firstStorageItem = storageAddonItems[0];
+  const storageIntervalMatches =
+    !targetStorageAddonId ||
+    !firstStorageItem ||
+    firstStorageItem.price?.recurring?.interval === desiredRecurringInterval;
+  const storagePlanChanged = currentStorageAddonId !== targetStorageAddonId;
+  const storageIntervalMismatch =
+    Boolean(targetStorageAddonId) && !storagePlanChanged && !storageIntervalMatches;
+
+  if (storagePlanChanged || storageIntervalMismatch) {
     for (const item of storageAddonItems) {
       itemsToUpdate.push({ id: item.id, deleted: true });
     }
     if (targetStorageAddonId) {
       try {
-        const storageAddonPriceId = await getOrCreateStripeStorageAddonPrice(targetStorageAddonId as StorageAddonId);
+        const storageAddonPriceId = await getOrCreateStripeStorageAddonPrice(
+          targetStorageAddonId as StorageAddonId,
+          billingToUse
+        );
         itemsToUpdate.push({ price: storageAddonPriceId, quantity: 1 });
       } catch (err) {
         console.error("[Stripe update-subscription] Failed to get storage addon price:", err);

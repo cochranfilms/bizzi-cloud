@@ -34,8 +34,11 @@ const STRIPE_PRICE_ENV_KEYS = {
   production_monthly: "STRIPE_PRICE_PRODUCTION_MONTHLY",
   production_annual: "STRIPE_PRICE_PRODUCTION_ANNUAL",
   gallery: "STRIPE_PRICE_GALLERY",
+  gallery_annual: "STRIPE_PRICE_GALLERY_ANNUAL",
   editor: "STRIPE_PRICE_EDITOR",
+  editor_annual: "STRIPE_PRICE_EDITOR_ANNUAL",
   fullframe: "STRIPE_PRICE_FULLFRAME",
+  fullframe_annual: "STRIPE_PRICE_FULLFRAME_ANNUAL",
   seat: "STRIPE_PRICE_SEAT",
 } as const;
 
@@ -55,8 +58,16 @@ export function getStripePriceId(
   return process.env[envKey] ?? null;
 }
 
-/** Get Stripe price ID for an addon */
-export function getStripeAddonPriceId(addonId: AddonId): string | null {
+/** Get Stripe price ID for an addon (monthly or annual). */
+export function getStripeAddonPriceId(
+  addonId: AddonId,
+  billing: BillingCycle = "monthly"
+): string | null {
+  if (billing === "annual") {
+    const annualKey = `${addonId}_annual` as keyof typeof STRIPE_PRICE_ENV_KEYS;
+    const annualEnv = STRIPE_PRICE_ENV_KEYS[annualKey];
+    if (annualEnv) return process.env[annualEnv] ?? null;
+  }
   const envKey = STRIPE_PRICE_ENV_KEYS[addonId];
   if (!envKey) return null;
   return process.env[envKey] ?? null;
@@ -89,6 +100,9 @@ export function getPlanIdFromPriceId(priceId: string): PlanId | AddonId | null {
   for (const addon of ["gallery", "editor", "fullframe"] as const) {
     const envVal = process.env[STRIPE_PRICE_ENV_KEYS[addon]];
     if (envVal === priceId) return addon;
+    const annualKey = `${addon}_annual` as keyof typeof STRIPE_PRICE_ENV_KEYS;
+    const annualVal = process.env[STRIPE_PRICE_ENV_KEYS[annualKey]];
+    if (annualVal === priceId) return addon;
   }
   return null;
 }
@@ -103,8 +117,9 @@ export function getPlanIdFromPriceId(priceId: string): PlanId | AddonId | null {
  *   STRIPE_PRICE_VIDEO_MONTHLY, STRIPE_PRICE_VIDEO_ANNUAL
  *   STRIPE_PRICE_PRODUCTION_MONTHLY, STRIPE_PRICE_PRODUCTION_ANNUAL
  *
- * Addons:
+ * Addons (monthly + optional annual for Checkout; all line items must share one interval):
  *   STRIPE_PRICE_GALLERY, STRIPE_PRICE_EDITOR, STRIPE_PRICE_FULLFRAME
+ *   STRIPE_PRICE_GALLERY_ANNUAL, STRIPE_PRICE_EDITOR_ANNUAL, STRIPE_PRICE_FULLFRAME_ANNUAL
  *
  * Seats:
  *   STRIPE_PRICE_SEAT — extra seat at $9/mo (for indie, video, production)

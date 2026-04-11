@@ -74,8 +74,8 @@ function getEnvFallback(planId: Exclude<PlanId, "free">, billing: BillingCycle):
   return getEnvPriceId(planId, billing);
 }
 
-function getEnvAddonFallback(addonId: AddonId): string | null {
-  return getEnvAddonPriceId(addonId);
+function getEnvAddonFallback(addonId: AddonId, billing: BillingCycle): string | null {
+  return getEnvAddonPriceId(addonId, billing);
 }
 
 function getEnvSeatFallback(): string | null {
@@ -151,64 +151,82 @@ export async function getOrCreateStripePrice(
 }
 
 /**
- * Get or create Stripe price for an addon. Caches in Firestore.
- * Validates cached/env price amounts match ADDON_PRICING; recreates if outdated.
+ * Get or create Stripe price for an addon. Caches in Firestore per billing cycle.
+ * Subscription Checkout requires every line item to use the same recurring interval.
  */
-export async function getOrCreateStripeAddonPrice(addonId: AddonId): Promise<string> {
+export async function getOrCreateStripeAddonPrice(
+  addonId: AddonId,
+  billing: BillingCycle = "monthly"
+): Promise<string> {
   const pricing = ADDON_PRICING[addonId];
   if (!pricing) throw new Error(`Unknown addon: ${addonId}`);
 
-  const expectedCents = pricing.monthly;
-  const stripe = getStripeInstance();
+  const amountCents =
+    billing === "monthly"
+      ? pricing.monthly
+      : annualPriceUsdFromMonthly(pricing.monthly / 100) * 100;
+  const interval = billing === "monthly" ? "month" : "year";
 
-  /** Validate a price ID: returns true if amount matches, false if stale or invalid */
-  async function isPriceValid(priceId: string): Promise<boolean> {
-    try {
-      const price = await stripe.prices.retrieve(priceId);
-      return price.unit_amount === expectedCents && price.currency === "usd";
-    } catch {
-      return false;
-    }
-  }
-
-  // Check env var first; validate amount and recreate if stale
-  const envPrice = getEnvAddonFallback(addonId);
+  const envPrice = getEnvAddonFallback(addonId, billing);
   if (envPrice) {
-    if (await isPriceValid(envPrice)) return envPrice;
+    if (await isStripeRecurringPriceValid(envPrice, amountCents, interval)) {
+      return envPrice;
+    }
     console.warn(
-      `[Stripe] STRIPE_PRICE_${addonId.toUpperCase()} has wrong amount; creating new price at $${(expectedCents / 100).toFixed(2)}`
+      `[Stripe] Addon env price for ${addonId} ${billing} is stale; creating new price at ${amountCents}¢`
     );
   }
 
-  const docId = `addon_${addonId}`;
+  const docId = `addon_${addonId}_${billing}`;
+  const legacyMonthlyDocId = billing === "monthly" ? `addon_${addonId}` : null;
   const db = getAdminFirestore();
   const docRef = db.collection(FIRESTORE_COLLECTION).doc(docId);
-  const snap = await docRef.get();
+  let snap = await docRef.get();
+
+  if (!snap.exists && legacyMonthlyDocId) {
+    snap = await db.collection(FIRESTORE_COLLECTION).doc(legacyMonthlyDocId).get();
+  }
 
   if (snap.exists) {
     const priceId = snap.data()?.price_id as string | undefined;
-    if (priceId && (await isPriceValid(priceId))) return priceId;
+    if (priceId && (await isStripeRecurringPriceValid(priceId, amountCents, interval))) {
+      if (snap.ref.id !== docId) {
+        await docRef.set({
+          price_id: priceId,
+          product_id: snap.data()?.product_id,
+          addon_id: addonId,
+          billing,
+          unit_amount_cents: amountCents,
+          migrated_from: legacyMonthlyDocId,
+          updated_at: new Date().toISOString(),
+        });
+      }
+      return priceId;
+    }
   }
+
+  const stripe = getStripeInstance();
 
   try {
     const product = await stripe.products.create({
       name: pricing.name,
-      metadata: { addon_id: addonId },
+      metadata: { addon_id: addonId, billing },
     });
 
     const price = await stripe.prices.create({
       product: product.id,
-      unit_amount: expectedCents,
+      unit_amount: amountCents,
       currency: "usd",
-      recurring: { interval: "month" },
-      metadata: { addon_id: addonId },
+      recurring: { interval },
+      metadata: { addon_id: addonId, billing },
     });
 
     await docRef.set({
       price_id: price.id,
       product_id: product.id,
       addon_id: addonId,
-      unit_amount_cents: expectedCents,
+      billing,
+      unit_amount_cents: amountCents,
       updated_at: new Date().toISOString(),
     });
 
@@ -219,21 +237,44 @@ export async function getOrCreateStripeAddonPrice(addonId: AddonId): Promise<str
   }
 }
 
-/** Get or create Stripe price for storage add-on. Caches in Firestore. */
-export async function getOrCreateStripeStorageAddonPrice(storageAddonId: StorageAddonId): Promise<string> {
+/** Get or create Stripe price for storage add-on. Caches in Firestore per billing cycle. */
+export async function getOrCreateStripeStorageAddonPrice(
+  storageAddonId: StorageAddonId,
+  billing: BillingCycle = "monthly"
+): Promise<string> {
   const pricing = STORAGE_ADDON_PRICING[storageAddonId];
   if (!pricing) throw new Error(`Unknown storage addon: ${storageAddonId}`);
 
-  const docId = `storage_${storageAddonId}`;
+  const amountCents =
+    billing === "monthly"
+      ? pricing.monthly
+      : annualPriceUsdFromMonthly(pricing.monthly / 100) * 100;
+  const interval = billing === "monthly" ? "month" : "year";
+
+  const docId = `storage_${storageAddonId}_${billing}`;
+  const legacyMonthlyDocId = billing === "monthly" ? `storage_${storageAddonId}` : null;
   const db = getAdminFirestore();
   const docRef = db.collection(FIRESTORE_COLLECTION).doc(docId);
-  const snap = await docRef.get();
+  let snap = await docRef.get();
+
+  if (!snap.exists && legacyMonthlyDocId) {
+    snap = await db.collection(FIRESTORE_COLLECTION).doc(legacyMonthlyDocId).get();
+  }
+
   if (snap.exists) {
     const priceId = snap.data()?.price_id as string | undefined;
-    if (
-      priceId &&
-      (await isStripeRecurringPriceValid(priceId, pricing.monthly, "month"))
-    ) {
+    if (priceId && (await isStripeRecurringPriceValid(priceId, amountCents, interval))) {
+      if (snap.ref.id !== docId) {
+        await docRef.set({
+          price_id: priceId,
+          product_id: snap.data()?.product_id,
+          storage_addon_id: storageAddonId,
+          billing,
+          unit_amount_cents: amountCents,
+          migrated_from: legacyMonthlyDocId,
+          updated_at: new Date().toISOString(),
+        });
+      }
       return priceId;
     }
   }
@@ -241,16 +282,33 @@ export async function getOrCreateStripeStorageAddonPrice(storageAddonId: Storage
   const stripe = getStripeInstance();
   const product = await stripe.products.create({
     name: pricing.name,
-    metadata: { storage_addon_id: storageAddonId, storage_addon_plan: pricing.plan, storage_addon_tb: String(pricing.tb) },
+    metadata: {
+      storage_addon_id: storageAddonId,
+      storage_addon_plan: pricing.plan,
+      storage_addon_tb: String(pricing.tb),
+      billing,
+    },
   });
   const price = await stripe.prices.create({
     product: product.id,
-    unit_amount: pricing.monthly,
+    unit_amount: amountCents,
     currency: "usd",
-    recurring: { interval: "month" },
-    metadata: { storage_addon_id: storageAddonId, storage_addon_plan: pricing.plan, storage_addon_tb: String(pricing.tb) },
+    recurring: { interval },
+    metadata: {
+      storage_addon_id: storageAddonId,
+      storage_addon_plan: pricing.plan,
+      storage_addon_tb: String(pricing.tb),
+      billing,
+    },
   });
-  await docRef.set({ price_id: price.id, product_id: product.id, storage_addon_id: storageAddonId, updated_at: new Date().toISOString() });
+  await docRef.set({
+    price_id: price.id,
+    product_id: product.id,
+    storage_addon_id: storageAddonId,
+    billing,
+    unit_amount_cents: amountCents,
+    updated_at: new Date().toISOString(),
+  });
   return price.id;
 }
 
@@ -338,7 +396,7 @@ export async function getOrCreateStripeSeatPrice(): Promise<string> {
 
   try {
     const product = await stripe.products.create({
-      name: "Extra Seat",
+      name: "Extra collaborator seat",
       metadata: { type: "seat" },
     });
 
@@ -366,9 +424,9 @@ export async function getOrCreateStripeSeatPrice(): Promise<string> {
 
 const PERSONAL_TEAM_SEAT_LABELS: Record<PersonalTeamSeatAccess, string> = {
   none: "Team seat (base)",
-  gallery: "Team seat (Gallery)",
-  editor: "Team seat (Editor)",
-  fullframe: "Team seat (Full Frame)",
+  gallery: "Team seat (Bizzi Gallery Suite)",
+  editor: "Team seat (Bizzi Editor)",
+  fullframe: "Team seat (Bizzi Full Frame)",
 };
 
 /**

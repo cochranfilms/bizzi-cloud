@@ -30,87 +30,6 @@ export type PowerUpAddonTile = {
   bundleNote?: string;
 };
 
-function LightningBolts({
-  accentColor,
-  scopeId,
-  variant,
-}: {
-  accentColor: string;
-  scopeId: string;
-  variant: "card" | "spill";
-}) {
-  const filterId = `powerup-lightning-glow-${variant}-${scopeId}`;
-  if (variant === "card") {
-    return (
-      <svg
-        className="pointer-events-none absolute inset-0 h-full w-full"
-        viewBox="0 0 100 130"
-        preserveAspectRatio="xMidYMid slice"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden
-      >
-        <defs>
-          <filter id={filterId} x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="0.45" result="b" />
-            <feMerge>
-              <feMergeNode in="b" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-        <g stroke={accentColor} style={{ color: accentColor }}>
-          <path
-            className="powerup-lightning-bolt"
-            filter={`url(#${filterId})`}
-            d="M 52 22 L 55 38 L 49 41 L 56 56 L 50 60 L 57 76 L 52 80 L 58 100"
-          />
-          <path
-            className="powerup-lightning-bolt powerup-lightning-bolt--delay-1"
-            filter={`url(#${filterId})`}
-            d="M 42 26 L 39 40 L 45 44 L 37 58 L 44 62 L 38 78 L 45 82 L 40 100"
-          />
-          <path
-            className="powerup-lightning-bolt powerup-lightning-bolt--delay-2"
-            filter={`url(#${filterId})`}
-            d="M 48 30 L 51 46 L 46 50 L 53 66 L 48 70 L 54 86 L 49 90 L 53 104"
-          />
-        </g>
-      </svg>
-    );
-  }
-  return (
-    <svg
-      className="pointer-events-none mx-auto h-12 w-[52%] shrink-0 sm:h-14"
-      viewBox="0 0 80 52"
-      preserveAspectRatio="xMidYMin meet"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden
-    >
-      <defs>
-        <filter id={filterId} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="0.35" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-      <g stroke={accentColor} style={{ color: accentColor }}>
-        <path
-          className="powerup-lightning-bolt"
-          filter={`url(#${filterId})`}
-          d="M 40 2 L 37 16 L 43 20 L 35 34 L 42 38 L 36 50 L 43 52"
-        />
-        <path
-          className="powerup-lightning-bolt powerup-lightning-bolt--delay-1"
-          filter={`url(#${filterId})`}
-          d="M 48 4 L 51 14 L 46 18 L 52 30 L 47 34 L 53 46 L 48 50"
-        />
-      </g>
-    </svg>
-  );
-}
-
 type PowerUpProductTilesProps = {
   /** Defaults to {@link powerUpAddons} so marketing tiles stay in sync with checkout. */
   addons?: PowerUpAddonTile[];
@@ -169,15 +88,13 @@ export default function PowerUpProductTiles({ addons }: PowerUpProductTilesProps
               >
                 <div className="absolute inset-0" style={{ background: POWERUP_CARD_BACKGROUND }} />
 
-                <LightningBolts accentColor={addon.accentColor} scopeId={addon.id} variant="card" />
-
                 <div className="relative z-[2] flex h-full items-center justify-center px-6 pb-8 pt-6 pointer-events-none">
                   <Image
                     src="/White-Bizzi.png"
                     alt=""
-                    width={200}
-                    height={200}
-                    className="h-auto w-[min(48%,8.5rem)] select-none drop-shadow-[0_2px_12px_rgba(0,0,0,0.12)] sm:w-[min(46%,9rem)]"
+                    width={400}
+                    height={400}
+                    className="h-auto w-[min(96%,17rem)] select-none drop-shadow-[0_2px_12px_rgba(0,0,0,0.12)] sm:w-[min(92%,18rem)]"
                     priority={false}
                   />
                 </div>
@@ -214,8 +131,6 @@ export default function PowerUpProductTiles({ addons }: PowerUpProductTilesProps
                   </ul>
                 </div>
               </div>
-
-              <LightningBolts accentColor={addon.accentColor} scopeId={`${addon.id}-spill`} variant="spill" />
 
               <h4 className="relative z-[1] mt-1 max-w-[280px] text-xl font-semibold tracking-tight text-neutral-900 dark:text-white sm:text-[1.35rem]">
                 {addon.name}
