@@ -347,11 +347,12 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   void set_defer_success_release_to_main(bool on) { defer_success_release_to_main_ = on; }
   void set_process_complete_experiment(int mode) { process_complete_experiment_ = mode; }
   void set_consumer_handoff_experiment(int mode) { consumer_handoff_experiment_ = mode; }
+  void set_handoff_copy_pixels(bool on) { handoff_copy_pixels_ = on; }
 
   bool wait_processed(uint64_t frame_index);
 
   /**
-   * After successful wait_processed(), move the completed frame out of the callback under mu_.
+   * After successful wait_processed(), transfers the completed frame out under mu_ (copy by default; optional move).
    * Caller writes to FFmpeg after this returns (no callback locks held).
    */
   bool take_completed_frame(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w, uint32_t& h,
@@ -385,6 +386,7 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   bool defer_success_release_to_main_ = false;
   int process_complete_experiment_ = 0;
   int consumer_handoff_experiment_ = 0;
+  bool handoff_copy_pixels_ = true;
   std::atomic<uint64_t> active_frame_index_{kUnknownFrameIndex};
   std::atomic<uint64_t> release_seq_{1};
 
@@ -588,19 +590,65 @@ bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t&
         frame_ready_ = false;
       } else {
         const int che = consumer_handoff_experiment_;
-        if (che == 2) {
-          owned = pending_.pixels;
+        const bool use_copy = handoff_copy_pixels_ || che == 2;
+        void* const pre_pending_data = pending_.pixels.empty() ? nullptr : static_cast<void*>(pending_.pixels.data());
+        const size_t pre_pending_size = pending_.pixels.size();
+        const size_t pre_pending_cap = pending_.pixels.capacity();
+
+        if (debug_trace_) {
           std::fprintf(stderr,
-            "[ffmpeg-braw trace] take_completed_frame: consumer bisect-2 — copy pixels to owned (no std::move) "
-            "(tid=%zu)\n",
-            braw_trace_tid_hash());
+            "[ffmpeg-braw trace] handoff-instrument: before transfer frame=%llu use_copy=%d pre_pending data=%p "
+            "size=%zu cap=%zu tid=%zu\n",
+            static_cast<unsigned long long>(frame_index), use_copy ? 1 : 0, pre_pending_data, pre_pending_size,
+            pre_pending_cap, braw_trace_tid_hash());
+          std::fflush(stderr);
+        }
+
+        if (use_copy) {
+          owned = pending_.pixels;
+          if (che == 2) {
+            std::fprintf(stderr,
+              "[ffmpeg-braw trace] take_completed_frame: consumer bisect-2 — copy (also: handoff_copy_pixels=%d) "
+              "(tid=%zu)\n",
+              handoff_copy_pixels_ ? 1 : 0, braw_trace_tid_hash());
+          } else {
+            std::fprintf(stderr,
+              "[ffmpeg-braw trace] take_completed_frame: packet copied to owner (handoff_copy_pixels default path) "
+              "(tid=%zu)\n",
+              braw_trace_tid_hash());
+          }
         } else {
           owned = std::move(pending_.pixels);
-          std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: packet moved to owner; stealing deferred SDK ptrs "
-                                        "(tid=%zu)\n",
+          std::fprintf(stderr,
+            "[ffmpeg-braw trace] take_completed_frame: packet moved to owner (--handoff-move-pixels; bisect move path) "
+            "(tid=%zu)\n",
             braw_trace_tid_hash());
         }
+
+        if (debug_trace_) {
+          void* const post_pending_data =
+            pending_.pixels.empty() ? nullptr : static_cast<void*>(pending_.pixels.data());
+          void* const owned_data = owned.empty() ? nullptr : static_cast<void*>(owned.data());
+          const bool alias_after = (pre_pending_data != nullptr && owned_data == pre_pending_data);
+          std::fprintf(stderr,
+            "[ffmpeg-braw trace] handoff-instrument: after transfer (before pending_={}) pending.size=%zu pending.cap=%zu "
+            "pending.data=%p owned.data=%p owned.size=%zu owned.cap=%zu data_alias_pre_pending=%d tid=%zu\n",
+            pending_.pixels.size(), pending_.pixels.capacity(), post_pending_data, owned_data, owned.size(),
+            owned.capacity(), alias_after ? 1 : 0, braw_trace_tid_hash());
+          std::fflush(stderr);
+        }
+
         pending_ = FrameHandoffPacket{};
+
+        if (debug_trace_) {
+          void* const owned_after_clear_pending = owned.empty() ? nullptr : static_cast<void*>(owned.data());
+          std::fprintf(stderr,
+            "[ffmpeg-braw trace] handoff-instrument: after pending_={} owned.data=%p size=%zu cap=%zu (must still own "
+            "buffer) tid=%zu\n",
+            owned_after_clear_pending, owned.size(), owned.capacity(), braw_trace_tid_hash());
+          std::fflush(stderr);
+        }
+
         if (che == 3) {
           std::fprintf(stderr,
             "[ffmpeg-braw trace] take_completed_frame: consumer bisect-3 — leaving frame_ready_=true until next "
@@ -619,7 +667,7 @@ bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t&
           static_cast<void*>(rel_j), static_cast<void*>(rel_im), braw_trace_tid_hash());
         std::fflush(stderr);
         ok = true;
-        std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: after move/clear (owned=%zu tid=%zu)\n",
+        std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: after transfer/clear (owned=%zu tid=%zu)\n",
           owned.size(), braw_trace_tid_hash());
         std::fflush(stderr);
         std::fprintf(stderr,
@@ -638,6 +686,13 @@ bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t&
     }
   }
 
+  if (ok && debug_trace_) {
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] handoff-instrument: post-mutex pre-SDK-Release owned.data=%p size=%zu cap=%zu tid=%zu\n",
+      owned.empty() ? nullptr : static_cast<void*>(owned.data()), owned.size(), owned.capacity(), braw_trace_tid_hash());
+    std::fflush(stderr);
+  }
+
   merge_external_deferred_sdk_pair(rel_j, rel_im, rel_cb,
     ok ? "main after packet consumed (before on_frame / next SDK call)" : "main take_completed_frame error path");
   std::fprintf(stderr,
@@ -653,6 +708,12 @@ bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t&
     std::fprintf(stderr,
       "[ffmpeg-braw trace] take_completed_frame: SDK deferred pair released on main; members already null (tid=%zu)\n",
       braw_trace_tid_hash());
+    if (debug_trace_) {
+      std::fprintf(stderr,
+        "[ffmpeg-braw trace] handoff-instrument: post-SDK-Release owned.data=%p size=%zu cap=%zu (stable for on_frame) "
+        "tid=%zu\n",
+        owned.empty() ? nullptr : static_cast<void*>(owned.data()), owned.size(), owned.capacity(), braw_trace_tid_hash());
+    }
     std::fflush(stderr);
   } else {
     std::fprintf(stderr, "braw-proxy-cli: consumer: dequeue FAILED (frame=%llu tid=%zu)\n",
@@ -1356,10 +1417,11 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   std::fprintf(stderr, "[ffmpeg-braw trace] 1 entering braw_decode_frames\n");
   std::fprintf(stderr,
     "braw-proxy-cli: decode: config target_width=%d max_frames=%d clip_frames=%llu "
-    "defer_success_release_main=%d process_complete_experiment=%d consumer_handoff_experiment=%d tid=%zu\n",
+    "defer_success_release_main=%d process_complete_experiment=%d consumer_handoff_experiment=%d "
+    "handoff_copy_pixels=%d tid=%zu\n",
     cfg.target_width, cfg.max_frames, static_cast<unsigned long long>(meta.frame_count),
     cfg.defer_success_release_to_main ? 1 : 0, cfg.process_complete_experiment, cfg.consumer_handoff_experiment,
-    braw_trace_tid_hash());
+    cfg.handoff_copy_pixels ? 1 : 0, braw_trace_tid_hash());
   std::fflush(stderr);
 
   IBlackmagicRawFactory* factory = nullptr;
@@ -1402,6 +1464,7 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   callback->set_defer_success_release_to_main(cfg.defer_success_release_to_main);
   callback->set_process_complete_experiment(cfg.process_complete_experiment);
   callback->set_consumer_handoff_experiment(cfg.consumer_handoff_experiment);
+  callback->set_handoff_copy_pixels(cfg.handoff_copy_pixels);
 
   hr = codec->SetCallback(callback);
   if (FAILED(hr)) {
@@ -1565,6 +1628,15 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       static_cast<unsigned long long>(i), braw_trace_tid_hash());
     std::fflush(stderr);
 
+    if (cfg.debug_trace) {
+      void* const p = frame_owned.empty() ? nullptr : static_cast<void*>(frame_owned.data());
+      std::fprintf(stderr,
+        "[ffmpeg-braw trace] handoff-instrument: main before on_frame frame=%llu frame_owned.data=%p size=%zu cap=%zu "
+        "ptr_to_on_frame=%p tid=%zu\n",
+        static_cast<unsigned long long>(i), p, frame_owned.size(), frame_owned.capacity(), p, braw_trace_tid_hash());
+      std::fflush(stderr);
+    }
+
     std::fprintf(stderr,
       "braw-proxy-cli: consumer: calling on_frame (frame=%llu bytes=%zu row=%u %ux%u tid=%zu)\n",
       static_cast<unsigned long long>(i), frame_owned.size(), static_cast<unsigned>(rb), static_cast<unsigned>(ow),
@@ -1586,6 +1658,11 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       static_cast<unsigned long long>(i));
     std::fflush(stderr);
     if (cfg.debug_trace) {
+      void* const p2 = frame_owned.empty() ? nullptr : static_cast<void*>(frame_owned.data());
+      std::fprintf(stderr,
+        "[ffmpeg-braw trace] handoff-instrument: main after on_frame frame=%llu frame_owned.data=%p size=%zu cap=%zu "
+        "tid=%zu\n",
+        static_cast<unsigned long long>(i), p2, frame_owned.size(), frame_owned.capacity(), braw_trace_tid_hash());
       std::fprintf(stderr, "braw-proxy-cli: trace: frame index increment past %llu\n",
         static_cast<unsigned long long>(i));
       std::fflush(stderr);
@@ -1634,6 +1711,7 @@ int braw_probe_decoded_frame0_size(const std::string& input_path, const BrawDeco
   BrawDecodeConfig one = cfg;
   one.max_frames = 1;
   one.consumer_handoff_experiment = 0; /** Probe needs take_completed_frame + on_frame to capture dimensions. */
+  one.handoff_copy_pixels = true; /** Keep probe on safe path regardless of CLI --handoff-move-pixels. */
   std::fprintf(stderr,
     "braw-proxy-cli: probe: forcing max_frames=1 for decoded frame0 size probe (caller requested max_frames=%d)\n",
     cfg.max_frames);

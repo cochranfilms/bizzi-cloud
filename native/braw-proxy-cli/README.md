@@ -74,12 +74,15 @@ Workers should invoke **`/opt/braw-worker/bin/ffmpeg-braw`** (wrapper). Adjust `
                     10 — + `frame_ready_` (same publish body as mode 3)
                     11 — publish through step 9 under lock, COM Release, then set `frame_ready_` (readiness after COM)
                     12 — publish through step 9, set `frame_ready_` before COM Release (two lock windows; readiness while COM alive)
+--handoff-move-pixels
+                   Use std::move from `pending_.pixels` into the main-thread buffer (faster; was crash-prone on some Linux builds). Default is copy-based handoff (safe). Frame0 probe always uses copy.
 --consumer-handoff-experiment N
                    Main-thread consumer bisect (0–3); composes with `--process-complete-experiment`. Frame0 probe forces0.
- 0 — normal: wait → take_completed_frame (move) → on_frame
+ 0 — normal: wait → take_completed_frame → on_frame (uses copy unless `--handoff-move-pixels`)
                      1 — after wait_processed, skip take + on_frame (next `reset_wait` clears slot; avoid `--defer-success-release-main`)
-                     2 — copy pixels in take_completed_frame instead of std::move
+                     2 — force copy even if `--handoff-move-pixels` (redundant when copy is default)
                      3 — dequeue OK but leave `frame_ready_` true until next `reset_wait` (stale-ready window through on_frame)
+--debug            Also enables detailed `handoff-instrument` pointer/size/capacity traces around dequeue and on_frame.
 --help             Print usage and exit 0
 ```
 

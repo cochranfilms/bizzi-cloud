@@ -58,6 +58,12 @@ struct BrawDecodeConfig {
    * 3 = dequeue success but omit frame_ready_=false until next reset_wait (tests stale-ready window before on_frame).
    */
   int consumer_handoff_experiment = 0;
+  /**
+   * When true (default), take_completed_frame copies pending_.pixels into the caller-owned vector. When false, uses
+   * std::move (faster; was associated with crashes on some Linux SDK builds). --handoff-move-pixels sets this false.
+   * consumer_handoff_experiment == 2 still forces copy even if this is false.
+   */
+  bool handoff_copy_pixels = true;
 };
 
 struct ClipMeta {
