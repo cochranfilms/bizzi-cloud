@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -294,6 +295,14 @@ struct FrameHandoffPacket {
   uint32_t h = 0;
   uint32_t row_bytes = 0;
   bool valid = false;
+};
+
+/** Main-thread dequeue bundle; optional heap allocation per iteration (fresh_frame_object_per_iteration). */
+struct CompletedFrame {
+  std::vector<uint8_t> pixels;
+  uint32_t row_bytes = 0;
+  uint32_t w = 0;
+  uint32_t h = 0;
 };
 
 /**
@@ -640,10 +649,16 @@ bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t&
             (fresh_owned_prev_cap_ != 0u && owned.capacity() == fresh_owned_prev_cap_);
           std::fprintf(stderr,
             "consumer fresh-owned: allocated new packet/vector for frame=%llu data=%p size=%zu cap=%zu pending_valid=%d "
-            "same_data_ptr_as_prev=%d same_cap_as_prev=%d tid=%zu\n",
+            "same_heap_data_ptr_as_prev=%d same_cap_as_prev=%d tid=%zu\n",
             static_cast<unsigned long long>(frame_index), od, owned.size(), owned.capacity(), pkt_valid ? 1 : 0,
             same_data_as_prev ? 1 : 0, same_cap_as_prev ? 1 : 0, braw_trace_tid_hash());
           std::fflush(stderr);
+          if (frame_index > 0 && (same_data_as_prev || same_cap_as_prev)) {
+            std::fprintf(stderr,
+              "consumer fresh-owned: note: matching data pointer or capacity vs previous frame is often heap allocator "
+              "reuse, not the same std::vector object retained across frames\n");
+            std::fflush(stderr);
+          }
           if (debug_trace_) {
             std::fprintf(stderr,
               "[ffmpeg-braw trace] handoff-instrument: fresh-owned post-assign &owned=%p owned.data=%p size=%zu cap=%zu "
@@ -1493,10 +1508,11 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   std::fprintf(stderr,
     "braw-proxy-cli: decode: config target_width=%d max_frames=%d clip_frames=%llu "
     "defer_success_release_main=%d process_complete_experiment=%d consumer_handoff_experiment=%d "
-    "handoff_copy_pixels=%d fresh_owned_per_frame=%d tid=%zu\n",
+    "handoff_copy_pixels=%d fresh_owned_per_frame=%d fresh_frame_object_per_iteration=%d tid=%zu\n",
     cfg.target_width, cfg.max_frames, static_cast<unsigned long long>(meta.frame_count),
     cfg.defer_success_release_to_main ? 1 : 0, cfg.process_complete_experiment, cfg.consumer_handoff_experiment,
-    cfg.handoff_copy_pixels ? 1 : 0, cfg.fresh_owned_per_frame ? 1 : 0, braw_trace_tid_hash());
+    cfg.handoff_copy_pixels ? 1 : 0, cfg.fresh_owned_per_frame ? 1 : 0,
+    cfg.fresh_frame_object_per_iteration ? 1 : 0, braw_trace_tid_hash());
   std::fflush(stderr);
 
   IBlackmagicRawFactory* factory = nullptr;
@@ -1589,6 +1605,7 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   uint32_t prev_rb = 0;
   uint32_t prev_ow = 0;
   uint32_t prev_oh = 0;
+  const void* prev_heap_completed_ptr = nullptr;
 
   /**
    * One frame cycle (success, typical immediate-COM producer): reset_wait clears prior slot → set_active_frame →
@@ -1692,6 +1709,142 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       continue;
     }
 
+    if (cfg.fresh_frame_object_per_iteration) {
+      auto completed = std::make_unique<CompletedFrame>();
+      void* const heap_obj = static_cast<void*>(completed.get());
+      int addr_changed_from_prev = -1;
+      int same_heap_slot_as_prev = 0;
+      if (prev_heap_completed_ptr != nullptr) {
+        same_heap_slot_as_prev =
+          (static_cast<const void*>(heap_obj) == prev_heap_completed_ptr) ? 1 : 0;
+        addr_changed_from_prev = same_heap_slot_as_prev ? 0 : 1;
+      }
+      std::fprintf(stderr,
+        "consumer fresh-frame-object: created new CompletedFrame for frame=%llu CompletedFrame*=%p "
+        "address_changed_from_previous_iteration=%d same_heap_slot_as_previous_iteration=%d tid=%zu\n",
+        static_cast<unsigned long long>(i), heap_obj, addr_changed_from_prev, same_heap_slot_as_prev,
+        braw_trace_tid_hash());
+      if (same_heap_slot_as_prev) {
+        std::fprintf(stderr,
+          "consumer fresh-frame-object: note: same CompletedFrame* as prior iteration usually means heap allocator "
+          "reused the block; it is not the previous C++ object still alive\n");
+        std::fflush(stderr);
+      }
+      std::fflush(stderr);
+
+      if (!callback->take_completed_frame(completed->pixels, completed->row_bytes, completed->w, completed->h, i)) {
+        callback->set_active_frame_index(kUnknownFrameIndex);
+        safe_release(clip_attrs);
+        safe_release(clip);
+        safe_release(codec);
+        callback->Release();
+        safe_release(factory);
+        return EX_DECODE;
+      }
+
+      std::fprintf(stderr,
+        "[ffmpeg-braw trace] main: frame %llu — packet on main; deferred COM (if any) drained in take_completed_frame "
+        "(tid=%zu)\n",
+        static_cast<unsigned long long>(i), braw_trace_tid_hash());
+      std::fflush(stderr);
+
+      if (cfg.consumer_handoff_experiment == 4) {
+        std::vector<uint8_t> fresh_owned(completed->pixels.begin(), completed->pixels.end());
+        std::fprintf(stderr,
+          "[ffmpeg-braw trace] consumer bisect-4: cloned fresh owned buffer before on_frame (frame=%llu old_data=%p "
+          "old_cap=%zu fresh_data=%p fresh_cap=%zu tid=%zu)\n",
+          static_cast<unsigned long long>(i),
+          completed->pixels.empty() ? nullptr : static_cast<void*>(completed->pixels.data()), completed->pixels.capacity(),
+          fresh_owned.empty() ? nullptr : static_cast<void*>(fresh_owned.data()), fresh_owned.capacity(),
+          braw_trace_tid_hash());
+        completed->pixels.swap(fresh_owned);
+        fresh_owned = std::vector<uint8_t>{};
+        std::fflush(stderr);
+      }
+
+      if (cfg.debug_trace) {
+        void* const p = completed->pixels.empty() ? nullptr : static_cast<void*>(completed->pixels.data());
+        std::fprintf(stderr,
+          "[ffmpeg-braw trace] handoff-instrument: fresh-frame-object before on_frame frame=%llu CompletedFrame*=%p "
+          "pixels.data=%p size=%zu cap=%zu row=%u %ux%u tid=%zu\n",
+          static_cast<unsigned long long>(i), heap_obj, p, completed->pixels.size(), completed->pixels.capacity(),
+          static_cast<unsigned>(completed->row_bytes), static_cast<unsigned>(completed->w), static_cast<unsigned>(completed->h),
+          braw_trace_tid_hash());
+        std::fflush(stderr);
+      }
+
+      std::fprintf(stderr,
+        "braw-proxy-cli: consumer: calling on_frame (frame=%llu bytes=%zu row=%u %ux%u tid=%zu)\n",
+        static_cast<unsigned long long>(i), completed->pixels.size(), static_cast<unsigned>(completed->row_bytes),
+        static_cast<unsigned>(completed->w), static_cast<unsigned>(completed->h), braw_trace_tid_hash());
+      std::fflush(stderr);
+      std::fprintf(stderr,
+        "consumer fresh-frame-object: before on_frame frame=%llu CompletedFrame*=%p tid=%zu\n",
+        static_cast<unsigned long long>(i), heap_obj, braw_trace_tid_hash());
+      std::fflush(stderr);
+      if (!on_frame(completed->pixels.data(), completed->row_bytes, completed->w, completed->h, i)) {
+        std::fprintf(stderr, "braw-proxy-cli: consumer: on_frame returned false (frame=%llu)\n",
+          static_cast<unsigned long long>(i));
+        std::fflush(stderr);
+        callback->set_active_frame_index(kUnknownFrameIndex);
+        safe_release(clip_attrs);
+        safe_release(clip);
+        safe_release(codec);
+        callback->Release();
+        safe_release(factory);
+        return EX_DECODE;
+      }
+      std::fprintf(stderr, "braw-proxy-cli: consumer: on_frame OK; loop continues past frame %llu\n",
+        static_cast<unsigned long long>(i));
+      std::fflush(stderr);
+      std::fprintf(stderr,
+        "consumer fresh-frame-object: after on_frame frame=%llu CompletedFrame*=%p tid=%zu\n",
+        static_cast<unsigned long long>(i), heap_obj, braw_trace_tid_hash());
+      std::fflush(stderr);
+
+      if (cfg.debug_trace) {
+        void* const p2 = completed->pixels.empty() ? nullptr : static_cast<void*>(completed->pixels.data());
+        std::fprintf(stderr,
+          "[ffmpeg-braw trace] handoff-instrument: fresh-frame-object after on_frame frame=%llu CompletedFrame*=%p "
+          "pixels.data=%p size=%zu cap=%zu tid=%zu\n",
+          static_cast<unsigned long long>(i), heap_obj, p2, completed->pixels.size(), completed->pixels.capacity(),
+          braw_trace_tid_hash());
+        std::fflush(stderr);
+      }
+
+      if (cfg.consumer_handoff_experiment == 5) {
+        callback->scrub_after_on_frame(i);
+        completed->pixels = std::vector<uint8_t>{};
+        completed->row_bytes = 0;
+        completed->w = 0;
+        completed->h = 0;
+        std::fprintf(stderr,
+          "[ffmpeg-braw trace] consumer bisect-5: scrubbed callback/local frame state after on_frame (frame=%llu tid=%zu)\n",
+          static_cast<unsigned long long>(i), braw_trace_tid_hash());
+        std::fflush(stderr);
+      }
+
+      std::fprintf(stderr,
+        "braw-proxy-cli: loop: iteration EXIT (frame_index=%llu fresh-frame-object heap CompletedFrame*=%p bytes=%zu "
+        "data=%p tid=%zu)\n",
+        static_cast<unsigned long long>(i), heap_obj, completed->pixels.size(),
+        completed->pixels.empty() ? nullptr : static_cast<void*>(completed->pixels.data()), braw_trace_tid_hash());
+      std::fflush(stderr);
+
+      prev_heap_completed_ptr = static_cast<const void*>(heap_obj);
+      void* const destroyed_report = heap_obj;
+      std::fprintf(stderr,
+        "consumer fresh-frame-object: destroying CompletedFrame for frame=%llu ptr=%p tid=%zu\n",
+        static_cast<unsigned long long>(i), destroyed_report, braw_trace_tid_hash());
+      std::fflush(stderr);
+      completed.reset();
+      std::fprintf(stderr,
+        "consumer fresh-frame-object: destroyed CompletedFrame for frame=%llu (ptr was %p) tid=%zu\n",
+        static_cast<unsigned long long>(i), destroyed_report, braw_trace_tid_hash());
+      std::fflush(stderr);
+      continue;
+    }
+
     std::vector<uint8_t> frame_owned;
     uint32_t rb = 0;
     uint32_t ow = 0;
@@ -1734,9 +1887,9 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
         static_cast<unsigned long long>(i), p, frame_owned.size(), frame_owned.capacity(), objp, p,
         braw_trace_tid_hash());
       std::fprintf(stderr,
-        "[ffmpeg-braw trace] handoff-instrument: frame reuse compare frame=%llu same_obj_slot_as_prev=%d same_data_as_prev=%d "
-        "same_cap_as_prev=%d same_size_as_prev=%d same_dims_as_prev=%d prev_data=%p prev_cap=%zu prev_size=%zu "
-        "prev_row=%u prev_wh=%ux%u prev_obj=%p tid=%zu\n",
+        "[ffmpeg-braw trace] handoff-instrument: frame reuse compare frame=%llu same_stack_obj_slot_as_prev=%d "
+        "same_heap_data_ptr_as_prev=%d same_cap_as_prev=%d same_size_as_prev=%d same_dims_as_prev=%d prev_data=%p "
+        "prev_cap=%zu prev_size=%zu prev_row=%u prev_wh=%ux%u prev_obj=%p tid=%zu\n",
         static_cast<unsigned long long>(i),
         (i > 0 && objp == prev_frame_owned_obj) ? 1 : 0,
         (i > 0 && p == prev_frame_owned_data) ? 1 : 0,
@@ -1745,6 +1898,13 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
         (i > 0 && rb == prev_rb && ow == prev_ow && oh == prev_oh) ? 1 : 0,
         prev_frame_owned_data, prev_frame_owned_cap, prev_frame_owned_size, prev_rb, prev_ow, prev_oh,
         prev_frame_owned_obj, braw_trace_tid_hash());
+      if (cfg.fresh_owned_per_frame && i > 0 &&
+          (p == prev_frame_owned_data || frame_owned.capacity() == prev_frame_owned_cap)) {
+        std::fprintf(stderr,
+          "[ffmpeg-braw trace] handoff-instrument: fresh_owned_per_frame: repeated data pointer or capacity vs prior "
+          "frame is often heap allocator reuse, not proof the same std::vector storage object was retained\n");
+        std::fflush(stderr);
+      }
       std::fflush(stderr);
     }
 
@@ -1843,6 +2003,7 @@ int braw_probe_decoded_frame0_size(const std::string& input_path, const BrawDeco
   one.consumer_handoff_experiment = 0; /** Probe needs take_completed_frame + on_frame to capture dimensions. */
   one.handoff_copy_pixels = true; /** Keep probe on safe path regardless of CLI --handoff-move-pixels. */
   one.fresh_owned_per_frame = false; /** Probe uses standard dequeue path. */
+  one.fresh_frame_object_per_iteration = false; /** Probe uses stack CompletedFrame-equivalent path. */
   std::fprintf(stderr,
     "braw-proxy-cli: probe: forcing max_frames=1 for decoded frame0 size probe (caller requested max_frames=%d)\n",
     cfg.max_frames);

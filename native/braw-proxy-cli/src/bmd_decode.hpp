@@ -71,6 +71,11 @@ struct BrawDecodeConfig {
    * bytes (no reuse of caller-owned capacity). --fresh-owned-per-frame
    */
   bool fresh_owned_per_frame = false;
+  /**
+   * When true, each decode iteration heap-allocates a new CompletedFrame (see bmd_decode.cpp) for dequeue/on_frame
+   * instead of reusing the stack slot. --fresh-frame-object-per-iteration
+   */
+  bool fresh_frame_object_per_iteration = false;
 };
 
 struct ClipMeta {
