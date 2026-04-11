@@ -58,13 +58,20 @@ Workers should invoke **`/opt/braw-worker/bin/ffmpeg-braw`** (wrapper). Adjust `
 --flush-unwind-probe
                    Shorthand for `--process-complete-experiment 1` unless an explicit experiment is set.
 --process-complete-experiment N
-                   Bisect ProcessComplete success handoff vs `FlushJobs()` unwind (0–4). Callback-thread COM release
-                   is always immediate in modes 1–4; defer flag applies only to mode 0.
+                   Bisect ProcessComplete success handoff vs `FlushJobs()` unwind (0–10). Callback-thread COM release
+                   is always immediate in modes 1–4 and 5–10; defer flag applies only to mode 0.
  0 — normal (honor `--defer-success-release-main`)
                      1 — skip copy/publish/notify; immediate COM (flush unwind probe)
                      2 — copy only; no publish/notify; immediate COM
-                     3 — copy + publish pending state under mutex; no notify; immediate COM
+                     3 — copy + full publish under mutex; no notify_all; immediate COM
                      4 — copy + publish + notify_all; immediate COM
+                   5–10 — cumulative publish-under-mutex bisect (same as 3: no notify_all). Each step adds, under lock:
+                     5 — clear deferred_process_* only
+                     6 — + reset `pending_` + move pixels
+                     7 — + w, h, row_bytes
+                     8 — + `pending_.valid`
+                     9 — + `last_hr_`
+                    10 — + `frame_ready_` (same publish body as mode 3)
 --help             Print usage and exit 0
 ```
 

@@ -1049,6 +1049,7 @@ void DecodeCallback::ProcessComplete(
   const int pce = self->process_complete_experiment_;
   const bool notify_consumers = (pce == 0 || pce == 4);
   const bool defer_com = self->defer_success_release_to_main_ && pce == 0;
+  const bool publish_bisect_no_notify = (pce == 3 || (pce >= 5 && pce <= 10));
 
   if (pce == 2) {
     std::fprintf(stderr,
@@ -1072,20 +1073,42 @@ void DecodeCallback::ProcessComplete(
     std::fprintf(stderr, "[ffmpeg-braw trace] handoff: publish packet (pixels=%zu w=%u h=%u row=%u tid=%zu)\n",
       plane.size(), width, height, rowBytes, braw_trace_tid_hash());
     std::fflush(stderr);
-    self->deferred_process_job_ = nullptr;
-    self->deferred_process_image_ = nullptr;
-    self->pending_ = FrameHandoffPacket{};
-    self->pending_.pixels = std::move(plane);
-    self->pending_.w = width;
-    self->pending_.h = height;
-    self->pending_.row_bytes = rowBytes;
-    self->pending_.valid = true;
-    self->last_hr_ = S_OK;
-    self->frame_ready_ = true;
-    if (pce == 3) {
+    /** Cumulative steps0..5: deferred clear; pending reset+pixels; dimensions; valid; last_hr; frame_ready. */
+    int publish_last_step = -1;
+    if (pce == 0 || pce == 4 || pce == 3)
+      publish_last_step = 5;
+    else if (pce >= 5 && pce <= 10)
+      publish_last_step = pce - 5;
+    if (publish_last_step >= 0) {
+      self->deferred_process_job_ = nullptr;
+      self->deferred_process_image_ = nullptr;
+    }
+    if (publish_last_step >= 1) {
+      self->pending_ = FrameHandoffPacket{};
+      self->pending_.pixels = std::move(plane);
+    }
+    if (publish_last_step >= 2) {
+      self->pending_.w = width;
+      self->pending_.h = height;
+      self->pending_.row_bytes = rowBytes;
+    }
+    if (publish_last_step >= 3)
+      self->pending_.valid = true;
+    if (publish_last_step >= 4)
+      self->last_hr_ = S_OK;
+    if (publish_last_step >= 5)
+      self->frame_ready_ = true;
+    if (publish_bisect_no_notify) {
       std::fprintf(stderr,
-        "[ffmpeg-braw trace] ProcessComplete: bisect-3 — pending_ published under lock; cv notify skipped (tid=%zu)\n",
-        braw_trace_tid_hash());
+        "[ffmpeg-braw trace] ProcessComplete: publish bisect — pce=%d publish_last_step=%d; cv notify_all skipped "
+        "(tid=%zu)\n",
+        pce, publish_last_step, braw_trace_tid_hash());
+      if (publish_last_step >= 0 && publish_last_step < 5) {
+        std::fprintf(stderr,
+          "[ffmpeg-braw trace] ProcessComplete: publish bisect WARNING: incomplete handoff (step<5) — wait_processed "
+          "may block (tid=%zu)\n",
+          braw_trace_tid_hash());
+      }
       std::fflush(stderr);
     } else if (notify_consumers) {
       std::fprintf(stderr, "[ffmpeg-braw trace] handoff: before notify (tid=%zu)\n", braw_trace_tid_hash());
@@ -1116,10 +1139,16 @@ void DecodeCallback::ProcessComplete(
     release_callback_after_return = false;
   } else {
     const char* strategy_ctx = release_ctx;
-    if (pce == 3)
+    if (pce == 3 || pce == 10)
       strategy_ctx = same_identity ? "ProcessComplete(bisect-3 publish no notify job Release only)"
                                    : "ProcessComplete(bisect-3 publish no notify image then job Release)";
-    else if (pce == 4)
+    else if (pce >= 5 && pce <= 9) {
+      static thread_local char bisect_ctx[160];
+      const int st = pce - 5;
+      std::snprintf(bisect_ctx, sizeof(bisect_ctx), "ProcessComplete(bisect-publish pce=%d last_step=%d %s)", pce, st,
+        same_identity ? "job Release only" : "image then job Release");
+      strategy_ctx = bisect_ctx;
+    } else if (pce == 4)
       strategy_ctx = same_identity ? "ProcessComplete(bisect-4 notify job Release only)"
                                    : "ProcessComplete(bisect-4 notify image then job Release)";
     std::fprintf(stderr,
@@ -1153,13 +1182,13 @@ void DecodeCallback::ProcessComplete(
       braw_trace_tid_hash());
     std::fflush(stderr);
     return_path = "success deferred outside callback state";
-  } else if (pce == 3) {
+  } else if (publish_bisect_no_notify) {
     std::fprintf(stderr,
-      "[ffmpeg-braw trace] ProcessComplete: returning to SDK (bisect-3 publish no notify; immediate COM on callback "
-      "thread) (tid=%zu)\n",
-      braw_trace_tid_hash());
+      "[ffmpeg-braw trace] ProcessComplete: returning to SDK (publish bisect pce=%d; no notify_all; immediate COM on "
+      "callback thread) (tid=%zu)\n",
+      pce, braw_trace_tid_hash());
     std::fflush(stderr);
-    return_path = "bisect-3 publish no notify immediate COM";
+    return_path = "publish bisect no notify immediate COM";
   } else if (pce == 4) {
     std::fprintf(stderr,
       "[ffmpeg-braw trace] ProcessComplete: returning to SDK (bisect-4 publish+notify; immediate COM on callback thread) "

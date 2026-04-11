@@ -38,6 +38,13 @@ struct BrawDecodeConfig {
    * 2 = copy SDK→owned buffer only, then immediate COM release (no publish/notify).
    * 3 = copy + publish pending_ under lock (valid/frame_ready) but no cv notify, then immediate COM release.
    * 4 = copy + publish + notify_all + immediate COM release (ignores defer_success_release_to_main).
+   * 5..10 = cumulative publish-under-lock bisect (no notify_all; same timing as 3). Each adds the next mutation:
+   *   5 = clear deferred_process_* only
+   *   6 = + reset pending_ + move pixels
+   *   7 = + w, h, row_bytes
+   *   8 = + pending_.valid = true
+   *   9 = + last_hr_ = S_OK
+   *  10 = + frame_ready_ = true (equivalent publish body to mode 3)
    */
   int process_complete_experiment = 0;
 };
