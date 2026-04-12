@@ -6,7 +6,11 @@
 
 import type { UploadCreateResponse, FileFingerprint } from "@/types/upload";
 import { getUploadApiBaseUrl } from "@/lib/upload-api-base";
-import { MULTIPART_THRESHOLD_BYTES } from "@/lib/multipart-thresholds";
+import { getUploadMultipartProfileLabel, MULTIPART_THRESHOLD_BYTES } from "@/lib/multipart-thresholds";
+import {
+  logUploadSessionTelemetry,
+  type UploadSessionTelemetryMode,
+} from "@/lib/upload-session-telemetry";
 
 const SAMPLE_SIZE = 64 * 1024;
 
@@ -126,6 +130,8 @@ function putWithProgress(
     onProgress?: (loaded: number, total: number) => void;
     /** Set true for single-file presigned PUT (required for B2 SSE-B2). False for multipart parts. */
     sseRequired?: boolean;
+    /** Fires synchronously immediately before the first body byte is sent (first B2 PUT). */
+    onBeforeSend?: () => void;
   }
 ): Promise<{ etag: string }> {
   return new Promise((resolve, reject) => {
@@ -146,6 +152,7 @@ function putWithProgress(
     };
     xhr.onerror = () => reject(new Error("Upload failed"));
     xhr.onabort = () => reject(new Error("Upload aborted"));
+    opts.onBeforeSend?.();
     xhr.send(blob);
   });
 }
@@ -154,13 +161,22 @@ async function putPartWithRetry(
   blob: Blob,
   url: string,
   contentType: string,
-  opts: { signal?: AbortSignal; onProgress?: (loaded: number, total: number) => void },
+  opts: {
+    signal?: AbortSignal;
+    onProgress?: (loaded: number, total: number) => void;
+    onBeforeSend?: () => void;
+  },
   maxRetries = 6
-): Promise<{ etag: string }> {
+): Promise<{ etag: string; attempts: number }> {
   let lastErr: Error | null = null;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      return await putWithProgress(blob, url, contentType, opts);
+      const { etag } = await putWithProgress(blob, url, contentType, {
+        signal: opts.signal,
+        onProgress: opts.onProgress,
+        onBeforeSend: attempt === 0 ? opts.onBeforeSend : undefined,
+      });
+      return { etag, attempts: attempt + 1 };
     } catch (err) {
       lastErr = err instanceof Error ? err : new Error(String(err));
       if (lastErr.message === "Upload aborted") throw lastErr;
@@ -241,7 +257,11 @@ export class UploadManager {
     uploadId: string,
     totalParts: number,
     initialParts: { partNumber: number; uploadUrl: string }[],
-    signal: AbortSignal
+    signal: AbortSignal,
+    doApiFetch: (
+      path: string,
+      init: Omit<RequestInit, "body"> & { body?: Record<string, unknown> }
+    ) => Promise<Response>
   ): (partNumber: number) => Promise<string> {
     const cache = new Map<number, string>();
     for (const p of initialParts) cache.set(p.partNumber, p.uploadUrl);
@@ -261,7 +281,7 @@ export class UploadManager {
             { length: LAZY_BATCH_SIZE },
             (_, i) => batchStart + i
           ).filter((n) => n >= 1 && n <= totalParts);
-          const batchRes = await this.apiFetch("/api/uploads/parts/batch", {
+          const batchRes = await doApiFetch("/api/uploads/parts/batch", {
             method: "POST",
             body: {
               session_id: sessionId,
@@ -333,11 +353,47 @@ export class UploadManager {
     this.progress.set(fileId, { loaded: 0, lastTime: Date.now(), lastLoaded: 0 });
 
     const contentType = file.type || "application/octet-stream";
-    const baseUrl = this.getBaseUrl();
+
+    const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+    const t0 = nowMs();
+    let firstB2PutMs: number | null = null;
+    const markFirstB2 = () => {
+      if (firstB2PutMs == null) firstB2PutMs = nowMs() - t0;
+    };
+    let controlPlaneRequests = 0;
+    let partRetrySum = 0;
+    type ApiInit = Omit<RequestInit, "body"> & { body?: Record<string, unknown> };
+    const cpFetch = (path: string, init: ApiInit) => {
+      controlPlaneRequests++;
+      return this.apiFetch(path, init);
+    };
+
+    const multipartProfile = getUploadMultipartProfileLabel();
+    const emitSession = (p: {
+      uploadMode: UploadSessionTelemetryMode;
+      fileSizeBytes: number;
+      partSizeBytes: number;
+      concurrency: number;
+      totalParts: number;
+      completionOk: boolean;
+      finalizeOk: boolean;
+      outcome: "success" | "failure" | "deduped" | "already_exists";
+      error?: string;
+    }) => {
+      logUploadSessionTelemetry({
+        surface: "upload_manager",
+        multipartProfile,
+        timeToFirstB2PutMs: firstB2PutMs,
+        totalDurationMs: nowMs() - t0,
+        controlPlaneRequests,
+        retryCount: partRetrySum,
+        ...p,
+      });
+    };
 
     try {
       const fingerprint = await computeFastFingerprint(file);
-      const dedupeRes = await this.apiFetch("/api/uploads/dedupe/check", {
+      const dedupeRes = await cpFetch("/api/uploads/dedupe/check", {
         method: "POST",
         body: {
           fingerprint,
@@ -350,13 +406,28 @@ export class UploadManager {
         const dedupe = (await dedupeRes.json()) as { exists?: boolean; objectKey?: string };
         if (dedupe.exists && dedupe.objectKey) {
           this.reportProgress(fileId, file.name, file.size, file.size, 1, 1, "completed");
-          await this.invokeOnComplete({ fileId, objectKey: dedupe.objectKey });
+          let finalizeOk = true;
+          try {
+            await this.invokeOnComplete({ fileId, objectKey: dedupe.objectKey });
+          } catch {
+            finalizeOk = false;
+          }
+          emitSession({
+            uploadMode: "single_put",
+            fileSizeBytes: file.size,
+            partSizeBytes: 0,
+            concurrency: 0,
+            totalParts: 0,
+            completionOk: true,
+            finalizeOk,
+            outcome: "deduped",
+          });
           return { objectKey: dedupe.objectKey };
         }
       }
 
       if (file.size < MULTIPART_THRESHOLD_BYTES) {
-        const urlRes = await this.apiFetch("/api/uploads/start-upload", {
+        const urlRes = await cpFetch("/api/uploads/start-upload", {
           method: "POST",
           body: {
             drive_id: driveId,
@@ -384,7 +455,22 @@ export class UploadManager {
         };
         if (urlData.alreadyExists) {
           this.reportProgress(fileId, file.name, file.size, file.size, 1, 1, "completed");
-          await this.invokeOnComplete({ fileId, objectKey: urlData.objectKey });
+          let finalizeOk = true;
+          try {
+            await this.invokeOnComplete({ fileId, objectKey: urlData.objectKey });
+          } catch {
+            finalizeOk = false;
+          }
+          emitSession({
+            uploadMode: "single_put",
+            fileSizeBytes: file.size,
+            partSizeBytes: 0,
+            concurrency: 1,
+            totalParts: 1,
+            completionOk: true,
+            finalizeOk,
+            outcome: "already_exists",
+          });
           return { objectKey: urlData.objectKey };
         }
         const putTarget = urlData.uploadUrl ?? urlData.putUrl;
@@ -392,17 +478,33 @@ export class UploadManager {
         await putWithProgress(file, putTarget, contentType, {
           signal: controller.signal,
           sseRequired: true,
+          onBeforeSend: markFirstB2,
           onProgress: (loaded) =>
             this.reportProgress(fileId, file.name, loaded, file.size, loaded >= file.size ? 1 : 0, 1, "uploading"),
         });
         this.reportProgress(fileId, file.name, file.size, file.size, 1, 1, "completed");
-        await this.invokeOnComplete({ fileId, objectKey: urlData.objectKey });
+        let finalizeOkSp = true;
+        try {
+          await this.invokeOnComplete({ fileId, objectKey: urlData.objectKey });
+        } catch {
+          finalizeOkSp = false;
+        }
+        emitSession({
+          uploadMode: "single_put",
+          fileSizeBytes: file.size,
+          partSizeBytes: 0,
+          concurrency: 1,
+          totalParts: 1,
+          completionOk: true,
+          finalizeOk: finalizeOkSp,
+          outcome: "success",
+        });
         return { objectKey: urlData.objectKey };
       }
 
       const contentHash =
         file.size > CONTENT_HASH_SKIP_THRESHOLD ? null : await this.sha256Hex(file);
-      const createRes = await this.apiFetch("/api/uploads/start-upload", {
+      const createRes = await cpFetch("/api/uploads/start-upload", {
         method: "POST",
         body: {
           drive_id: driveId,
@@ -426,7 +528,22 @@ export class UploadManager {
       const create = (await createRes.json()) as UploadCreateResponse;
       if (create.alreadyExists && create.existingObjectKey) {
         this.reportProgress(fileId, file.name, file.size, file.size, 1, 1, "completed");
-        await this.invokeOnComplete({ fileId, objectKey: create.existingObjectKey });
+        let finalizeOkEx = true;
+        try {
+          await this.invokeOnComplete({ fileId, objectKey: create.existingObjectKey });
+        } catch {
+          finalizeOkEx = false;
+        }
+        emitSession({
+          uploadMode: "multipart",
+          fileSizeBytes: file.size,
+          partSizeBytes: 0,
+          concurrency: 0,
+          totalParts: 0,
+          completionOk: true,
+          finalizeOk: finalizeOkEx,
+          outcome: "already_exists",
+        });
         return { objectKey: create.existingObjectKey };
       }
       if (
@@ -450,7 +567,7 @@ export class UploadManager {
             { length: Math.min(batchSize, totalParts - start) },
             (_, i) => start + i + 1
           );
-          const batchRes = await this.apiFetch("/api/uploads/parts/batch", {
+          const batchRes = await cpFetch("/api/uploads/parts/batch", {
             method: "POST",
             body: {
               session_id: create.sessionId,
@@ -489,14 +606,16 @@ export class UploadManager {
             uploadId,
             totalParts,
             parts,
-            controller.signal
+            controller.signal,
+            cpFetch
           )
         : null;
 
       const partNumbers = Array.from({ length: totalParts }, (_, i) => i + 1);
+      const conc = Math.min(recommendedConcurrency, 10);
       const uploadResults = await runWithConcurrency(
         partNumbers,
-        Math.min(recommendedConcurrency, 10),
+        conc,
         async (partNumber: number, idx: number) => {
           const url = getPartUrl
             ? await getPartUrl(partNumber)
@@ -504,20 +623,24 @@ export class UploadManager {
           const start = (partNumber - 1) * recommendedPartSize;
           const end = Math.min(start + recommendedPartSize, file.size);
           const blob = file.slice(start, end);
-          const { etag } = await putPartWithRetry(blob, url, contentType, {
+          const { etag, attempts } = await putPartWithRetry(blob, url, contentType, {
             signal: controller.signal,
+            onBeforeSend: markFirstB2,
             onProgress: (loaded) => {
               partProgress[idx] = loaded;
               report();
             },
           });
+          partRetrySum += Math.max(0, attempts - 1);
           partProgress[idx] = end - start;
           report();
           return { partNumber, etag };
         }
       );
 
-      const completeRes = await this.apiFetch("/api/uploads/complete-upload", {
+      let completionOk = true;
+      let finalizeOkMp = true;
+      const completeRes = await cpFetch("/api/uploads/complete-upload", {
         method: "POST",
         body: {
           session_id: create.sessionId,
@@ -534,18 +657,46 @@ export class UploadManager {
         },
       });
       if (!completeRes.ok) {
+        completionOk = false;
+        finalizeOkMp = false;
         const data = await completeRes.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error ?? "Failed to complete upload");
       }
       const complete = (await completeRes.json()) as { objectKey: string };
       this.reportProgress(fileId, file.name, file.size, file.size, totalParts, totalParts, "completed");
-      await this.invokeOnComplete({ fileId, objectKey: complete.objectKey });
+      try {
+        await this.invokeOnComplete({ fileId, objectKey: complete.objectKey });
+      } catch {
+        finalizeOkMp = false;
+      }
+      emitSession({
+        uploadMode: "multipart",
+        fileSizeBytes: file.size,
+        partSizeBytes: recommendedPartSize,
+        concurrency: conc,
+        totalParts,
+        completionOk,
+        finalizeOk: finalizeOkMp,
+        outcome: finalizeOkMp ? "success" : "failure",
+        ...(finalizeOkMp ? {} : { error: "onComplete_failed" }),
+      });
       removeSession(fileId);
       return { objectKey: complete.objectKey };
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Upload failed";
       if (msg !== "Upload aborted") {
         this.opts.onError?.({ fileId, error: msg });
+        emitSession({
+          uploadMode: file.size >= MULTIPART_THRESHOLD_BYTES ? "multipart" : "single_put",
+          fileSizeBytes: file.size,
+          partSizeBytes: 0,
+          concurrency: 1,
+          totalParts: 0,
+          completionOk: false,
+          finalizeOk: false,
+          outcome: "failure",
+          error: msg,
+        });
       }
       throw err;
     } finally {

@@ -38,6 +38,13 @@ import {
   isLikelyFlatMacosPackageBrowserUpload,
 } from "@/lib/macos-package-bundles";
 import { shouldUseUppyS3Multipart } from "@/lib/uppy-multipart-policy";
+import { computeBrowserMultipartPartPlan } from "@/lib/browser-multipart-plan";
+import { getUploadMultipartProfileLabel } from "@/lib/multipart-thresholds";
+import {
+  isUploadControlPlaneFetchUrl,
+  isUploadSessionTelemetryEnabled,
+  logUploadSessionTelemetry,
+} from "@/lib/upload-session-telemetry";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import UppyUploadPanelExpanded, { type UploadPanelMetrics } from "./UppyUploadPanelExpanded";
 import { enqueuePresignedComplete } from "@/lib/presigned-complete-queue";
@@ -249,6 +256,15 @@ export default function UppyUploadModal({
   const galleryIdForStorageRefreshRef = useRef(galleryId);
   galleryIdForStorageRefreshRef.current = galleryId;
 
+  type UppyTelRec = {
+    t0: number;
+    cp0: number;
+    firstPutOffsetMs: number | null;
+    retries: number;
+  };
+  const uppyTelByFileRef = useRef<Map<string, UppyTelRec>>(new Map());
+  const uppyTelCpRef = useRef(0);
+
   useEffect(() => {
     sessionGridTierRef.current = sessionGridTier;
   }, [sessionGridTier]);
@@ -426,6 +442,70 @@ export default function UppyUploadModal({
     };
     uppy.use(AwsS3, awsS3Opts);
     uppyRefLocal.current = uppy;
+
+    let restoreFetch: (() => void) | null = null;
+    if (typeof window !== "undefined" && isUploadSessionTelemetryEnabled()) {
+      const origFetch = window.fetch.bind(window);
+      window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+        const u = typeof input === "string" ? input : input instanceof Request ? input.url : String(input);
+        if (isUploadControlPlaneFetchUrl(u)) uppyTelCpRef.current += 1;
+        return origFetch(input as RequestInfo, init);
+      }) as typeof window.fetch;
+      restoreFetch = () => {
+        window.fetch = origFetch;
+      };
+    }
+
+    const logUppyFileSession = (
+      f: { id: string; size?: number | null; meta?: Record<string, unknown>; name?: string },
+      p: {
+        completionOk: boolean;
+        finalizeOk: boolean;
+        outcome: "success" | "failure" | "already_exists" | "deduped";
+        error?: string;
+      }
+    ) => {
+      if (!isUploadSessionTelemetryEnabled()) return;
+      const rec = uppyTelByFileRef.current.get(f.id);
+      const size = f.size ?? 0;
+      const multipart = shouldUseUppyS3Multipart({ size, meta: f.meta ?? {} });
+      const plan = computeBrowserMultipartPartPlan(size);
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      logUploadSessionTelemetry({
+        surface: "uppy",
+        multipartProfile: getUploadMultipartProfileLabel(),
+        uploadMode: multipart ? "multipart" : "single_put",
+        fileSizeBytes: size,
+        partSizeBytes: multipart ? plan.partSize : 0,
+        concurrency: multipart ? plan.recommendedConcurrency : 1,
+        totalParts: multipart ? plan.totalParts : 1,
+        timeToFirstB2PutMs: rec?.firstPutOffsetMs ?? null,
+        totalDurationMs: rec ? Math.max(0, now - rec.t0) : 0,
+        controlPlaneRequests: rec ? Math.max(0, uppyTelCpRef.current - rec.cp0) : 0,
+        retryCount: rec?.retries ?? 0,
+        ...p,
+      });
+      uppyTelByFileRef.current.delete(f.id);
+    };
+
+    uppy.on("upload-start", (files) => {
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      const cp = uppyTelCpRef.current;
+      for (const f of files) {
+        uppyTelByFileRef.current.set(f.id, {
+          t0: now,
+          cp0: cp,
+          firstPutOffsetMs: null,
+          retries: 0,
+        });
+      }
+    });
+
+    uppy.on("upload-retry", (f) => {
+      if (!f) return;
+      const e = uppyTelByFileRef.current.get(f.id);
+      if (e) e.retries += 1;
+    });
 
     uppy.addPreProcessor(async () => {
       const plugin = uppy.getPlugin("AwsS3");
@@ -653,6 +733,16 @@ export default function UppyUploadModal({
     });
 
     uppy.on("upload-progress", (file, progress) => {
+      if (file && progress) {
+        const bytesUploaded = Number((progress as { bytesUploaded?: number }).bytesUploaded ?? 0);
+        if (bytesUploaded > 0) {
+          const rec = uppyTelByFileRef.current.get(file.id);
+          if (rec && rec.firstPutOffsetMs == null) {
+            const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+            rec.firstPutOffsetMs = now - rec.t0;
+          }
+        }
+      }
       scheduleProgress();
       if (galleryId && file && progress) {
         const minI = getGalleryProgressMinIntervalMs(sessionGridTierRef.current);
@@ -675,6 +765,31 @@ export default function UppyUploadModal({
     });
     uppy.on("upload-error", (file, error) => {
       flushProgress();
+      if (file && isUploadSessionTelemetryEnabled()) {
+        const size = file.size ?? 0;
+        const multipart = shouldUseUppyS3Multipart({ size, meta: file.meta ?? {} });
+        const plan = computeBrowserMultipartPartPlan(size);
+        const rec = uppyTelByFileRef.current.get(file.id);
+        const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+        logUploadSessionTelemetry({
+          surface: "uppy",
+          multipartProfile: getUploadMultipartProfileLabel(),
+          uploadMode: multipart ? "multipart" : "single_put",
+          fileSizeBytes: size,
+          partSizeBytes: multipart ? plan.partSize : 0,
+          concurrency: multipart ? plan.recommendedConcurrency : 1,
+          totalParts: multipart ? plan.totalParts : 1,
+          timeToFirstB2PutMs: rec?.firstPutOffsetMs ?? null,
+          totalDurationMs: rec ? Math.max(0, now - rec.t0) : 0,
+          controlPlaneRequests: rec ? Math.max(0, uppyTelCpRef.current - rec.cp0) : 0,
+          retryCount: rec?.retries ?? 0,
+          completionOk: false,
+          finalizeOk: false,
+          outcome: "failure",
+          error: error?.message ?? "Upload failed",
+        });
+        uppyTelByFileRef.current.delete(file.id);
+      }
       if (galleryId && file) {
         onGalleryManageUploadLifecycleRef.current?.({
           type: "upload_error",
@@ -700,7 +815,8 @@ export default function UppyUploadModal({
     uppy.on("upload-success", async (file) => {
       if (!file) return;
       const size = file.size ?? 0;
-      if (size > 0 && !shouldUseUppyS3Multipart({ size, meta: file.meta ?? {} })) {
+      const multipart = shouldUseUppyS3Multipart({ size, meta: file.meta ?? {} });
+      if (size > 0 && !multipart) {
         const meta = file.meta ?? {};
         const metaDriveId = meta.driveId ?? meta.drive_id;
         const relativePath = meta.relativePath ?? meta.relative_path ?? file.name ?? "";
@@ -712,10 +828,14 @@ export default function UppyUploadModal({
           null;
         if (metaDriveId && relativePath && sizeBytes) {
           await enqueuePresignedComplete(async () => {
+            let finalizeOk = true;
+            let telemetryError: string | undefined;
             let data: { error?: string } = {};
             try {
               const token = await getAuthToken(false);
               if (!token) {
+                finalizeOk = false;
+                telemetryError = "no_auth_token";
                 const msg = "Sign in again to finish saving this upload to your library.";
                 uppy.setFileState(file.id, { error: msg });
                 uppy.info({ message: msg, details: file.name }, "error", 12_000);
@@ -764,6 +884,11 @@ export default function UppyUploadModal({
                 /* non-JSON body */
               }
               if (!res.ok) {
+                finalizeOk = false;
+                telemetryError =
+                  typeof data.error === "string" && data.error.trim()
+                    ? data.error.trim()
+                    : "presigned_complete_http_error";
                 const msg =
                   typeof data.error === "string" && data.error.trim()
                     ? data.error.trim()
@@ -799,23 +924,45 @@ export default function UppyUploadModal({
                 scheduleStorageGridRefresh();
               }
             } catch {
+              finalizeOk = false;
+              telemetryError = "presigned_complete_network_error";
               const msg =
                 "Could not reach the server to finish saving your upload. Check your connection and try again.";
               uppy.setFileState(file.id, { error: msg });
               uppy.info({ message: msg, details: file.name }, "error", 12_000);
               flushProgress();
-              const meta = file.meta ?? {};
-              if (galleryId && (meta.galleryId ?? meta.gallery_id)) {
+              const metaInner = file.meta ?? {};
+              if (galleryId && (metaInner.galleryId ?? metaInner.gallery_id)) {
                 onGalleryManageUploadLifecycleRef.current?.({
                   type: "upload_error",
                   clientId: file.id,
                   message: msg,
                 });
               }
+            } finally {
+              logUppyFileSession(file, {
+                completionOk: true,
+                finalizeOk,
+                outcome: finalizeOk ? "success" : "failure",
+                error: telemetryError,
+              });
             }
           });
+        } else {
+          logUppyFileSession(file, {
+            completionOk: true,
+            finalizeOk: true,
+            outcome: "success",
+          });
         }
-      } else if (!galleryId && (file.size ?? 0) > 0) {
+      } else {
+        logUppyFileSession(file, {
+          completionOk: true,
+          finalizeOk: true,
+          outcome: "success",
+        });
+      }
+      if (!galleryId && (file.size ?? 0) > 0) {
         scheduleStorageGridRefresh();
       }
       flushProgress();
@@ -882,6 +1029,9 @@ export default function UppyUploadModal({
         aggTimeout = null;
       }
       massDebug?.resetProgressMeter();
+      restoreFetch?.();
+      uppyTelByFileRef.current.clear();
+      uppyTelCpRef.current = 0;
       revokeAllUppyPreviewsFromUppy(uppy);
       uppy.cancelAll();
       uppy.destroy();

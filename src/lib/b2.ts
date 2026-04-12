@@ -1,8 +1,6 @@
 import { createHash } from "crypto";
-import {
-  BROWSER_MULTIPART_CONCURRENCY,
-  MULTIPART_THRESHOLD_BYTES,
-} from "@/lib/multipart-thresholds";
+import { MULTIPART_THRESHOLD_BYTES } from "@/lib/multipart-thresholds";
+import { computeBrowserMultipartPartPlan as computeBrowserMultipartPlanCore } from "@/lib/browser-multipart-plan";
 import {
   S3Client,
   PutObjectCommand,
@@ -73,7 +71,7 @@ export const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
 /** Re-export for call sites that already import multipart policy from `b2`. */
 export const MULTIPART_THRESHOLD = MULTIPART_THRESHOLD_BYTES;
 
-export { BROWSER_MULTIPART_CONCURRENCY };
+export { BROWSER_MULTIPART_CONCURRENCY } from "@/lib/multipart-thresholds";
 
 export interface AdaptivePartPlan {
   partSize: number;
@@ -129,22 +127,7 @@ export function computeAdaptivePartPlan(fileSizeBytes: number): AdaptivePartPlan
  * Migration / workers keep {@link computeAdaptivePartPlan}.
  */
 export function computeBrowserMultipartPartPlan(fileSizeBytes: number): AdaptivePartPlan {
-  if (fileSizeBytes === 0) {
-    return {
-      partSize: 8 * 1024 * 1024,
-      totalParts: 1,
-      recommendedConcurrency: 1,
-    };
-  }
-  const twoGiB = 2 * 1024 * 1024 * 1024;
-  let partSize = fileSizeBytes > twoGiB ? 64 * 1024 * 1024 : 32 * 1024 * 1024;
-  let totalParts = Math.ceil(fileSizeBytes / partSize);
-  if (totalParts > B2_MAX_PARTS) {
-    partSize = Math.ceil(fileSizeBytes / B2_MAX_PARTS);
-    partSize = Math.max(B2_PART_MIN, Math.min(partSize, B2_PART_MAX));
-    totalParts = Math.ceil(fileSizeBytes / partSize);
-  }
-  return { partSize, totalParts, recommendedConcurrency: BROWSER_MULTIPART_CONCURRENCY };
+  return computeBrowserMultipartPlanCore(fileSizeBytes);
 }
 
 /** Batch create presigned URLs for multiple parts (reduces API round-trips). */
