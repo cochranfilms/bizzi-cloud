@@ -63,7 +63,8 @@ import { rectsIntersect } from "@/lib/utils";
 import { BulkActionBar } from "./BulkActionBar";
 
 const HomeEmbeddedStorageGrid = dynamic(
-  () => import("./FileGrid").then((mod) => mod.default),
+  () =>
+    import(/* webpackPrefetch: true */ "./FileGrid").then((mod) => mod.default),
   {
     ssr: false,
     loading: () => (

@@ -20,18 +20,20 @@ export default function DashboardLayout({
       <SubscriptionProvider>
         <BackupProvider>
           <CurrentFolderProvider>
-            <DashboardAuthGuard>
-              <ConfirmProvider>
-                <DashboardAppearanceProvider>
-                  <LayoutSettingsProvider>
-                    <Suspense fallback={null}>
-                      <CheckoutSuccessSync />
-                    </Suspense>
-                    <DashboardShell>{children}</DashboardShell>
-                  </LayoutSettingsProvider>
-                </DashboardAppearanceProvider>
-              </ConfirmProvider>
-            </DashboardAuthGuard>
+            <ConfirmProvider>
+              <DashboardAppearanceProvider>
+                <LayoutSettingsProvider>
+                  <Suspense fallback={null}>
+                    <CheckoutSuccessSync />
+                  </Suspense>
+                  <DashboardShell>
+                    <DashboardAuthGuard contentMode="inShell">
+                      {children}
+                    </DashboardAuthGuard>
+                  </DashboardShell>
+                </LayoutSettingsProvider>
+              </DashboardAppearanceProvider>
+            </ConfirmProvider>
           </CurrentFolderProvider>
         </BackupProvider>
       </SubscriptionProvider>
