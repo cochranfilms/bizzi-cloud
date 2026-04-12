@@ -413,8 +413,8 @@ export default function TopBar({
 
   const topBarRightCluster = (
       <div
-        className={`flex min-w-0 w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end sm:gap-3 md:gap-4 ${
-          hubActionsNoWrap ? "sm:flex-nowrap sm:overflow-x-auto sm:[scrollbar-width:thin]" : "sm:flex-wrap"
+        className={`flex min-w-0 w-full shrink-0 flex-col items-stretch gap-2 overflow-visible sm:w-auto sm:flex-row sm:items-center sm:justify-end sm:gap-3 md:gap-4 ${
+          hubActionsNoWrap ? "sm:flex-nowrap" : "sm:flex-wrap"
         }`}
       >
         {showLayoutSettings ? (
@@ -467,7 +467,7 @@ export default function TopBar({
               <ChevronDown className={`h-4 w-4 transition-transform ${newDropdownOpen ? "rotate-180" : ""}`} />
             </button>
             {newDropdownOpen && (
-              <div className="absolute right-0 top-full z-50 mt-1 min-w-[180px] w-full min-w-[calc(100vw-2rem)] sm:min-w-[180px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
+              <div className="absolute right-0 top-full z-[100] mt-1 w-[min(100%,calc(100vw-2rem))] min-w-[180px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
                 {!canCreateStorageNestedFolder ? (
                   <button
                     type="button"
@@ -484,7 +484,7 @@ export default function TopBar({
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
                   >
                     <Folder className="h-4 w-4 flex-shrink-0" />
-                    New folder in Storage
+                    New Folder
                   </button>
                 )}
                 <button
@@ -576,13 +576,13 @@ export default function TopBar({
       </div>
   );
 
-  /** Home / team / desktop hub: filters + search far left; Layout + New stay right. */
+  /** Home / team / desktop hub: filters + search left; Layout + New right. Overflow scroll only on filter column so New dropdown isn’t clipped. */
   const homeHubToolbarRow = (
-    <div className="flex min-h-12 w-full flex-col gap-3 sm:min-h-12 sm:flex-row sm:items-center sm:justify-between sm:gap-3 md:gap-4">
-      <div className="order-2 flex min-w-0 flex-1 items-center justify-start sm:order-1">
+    <div className="flex w-full min-h-[3.25rem] flex-col gap-2 overflow-visible sm:h-14 sm:min-h-0 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-3 sm:pb-0 md:gap-4">
+      <div className="order-2 flex min-h-10 min-w-0 flex-1 items-center justify-start overflow-x-auto overflow-y-visible [scrollbar-width:thin] sm:order-1 sm:min-h-0 sm:max-w-[min(100%,42rem)]">
         {filesFilterTopChrome}
       </div>
-      <div className="order-1 flex w-full shrink-0 justify-end sm:order-2 sm:w-auto">
+      <div className="order-1 flex w-full shrink-0 justify-end overflow-visible sm:order-2 sm:w-auto">
         {topBarRightCluster}
       </div>
     </div>
@@ -596,18 +596,18 @@ export default function TopBar({
   );
 
   const toolbarActionsWrapClass = `flex min-w-0 flex-1 flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:gap-3 md:gap-4 ${
-    hubActionsNoWrap ? "sm:flex-nowrap sm:overflow-x-auto sm:[scrollbar-width:thin]" : "sm:flex-wrap"
+    hubActionsNoWrap ? "sm:flex-nowrap sm:overflow-visible" : "sm:flex-wrap"
   }`;
 
   return (
     <div
-      className={`flex flex-shrink-0 flex-col bg-white dark:bg-neutral-950 dark:shadow-neutral-900/30 ${
+      className={`relative z-10 flex flex-shrink-0 flex-col bg-white dark:bg-neutral-950 dark:shadow-neutral-900/30 ${
         centerContent
           ? "border-b border-neutral-200/70 dark:border-neutral-800/70"
           : "border-b border-neutral-200 dark:border-neutral-800"
       }`}
     >
-      <div className="px-4 pb-3 pt-4 md:px-6 md:pb-3 md:pt-5">
+      <div className="min-h-[3.25rem] px-4 pb-3 pt-4 md:px-6 md:pb-3 md:pt-5">
         {centerContent ? (
           <div className="flex flex-col gap-3">
             <div className="flex min-h-12 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
@@ -619,7 +619,9 @@ export default function TopBar({
               <div
               className={`flex min-w-0 w-full flex-1 items-stretch gap-2 pb-0.5 sm:max-w-none sm:gap-3 md:gap-4 ${
                 hubActionsNoWrap
-                  ? "flex-nowrap overflow-x-auto [scrollbar-width:thin]"
+                  ? isWorkspaceHomeHub
+                    ? "flex-nowrap overflow-visible"
+                    : "flex-nowrap overflow-x-auto [scrollbar-width:thin]"
                   : "flex-nowrap overflow-x-auto [scrollbar-width:thin] sm:flex-wrap sm:overflow-visible"
               } ${isWorkspaceHomeHub ? "" : "items-center justify-end"}`}
             >

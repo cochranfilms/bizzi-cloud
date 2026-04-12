@@ -146,11 +146,13 @@ export default function AddCommentInput({
 
   const textareaBase =
     "min-h-[2.5rem] w-full min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-1 text-[15px] leading-snug focus:outline-none focus:ring-0 disabled:opacity-50";
+  const textareaBaseImmersive =
+    "min-h-[2rem] w-full min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-0.5 text-[13px] leading-snug focus:outline-none focus:ring-0 disabled:opacity-50";
 
   const textareaClassName = immersiveChrome
     ? immersiveIsDark
-      ? `${textareaBase} text-white placeholder:text-neutral-400`
-      : `${textareaBase} text-neutral-900 placeholder:text-neutral-500`
+      ? `${textareaBaseImmersive} text-white placeholder:text-neutral-400`
+      : `${textareaBaseImmersive} text-neutral-900 placeholder:text-neutral-500`
     : "min-h-[2.5rem] w-full resize-none rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm leading-snug text-neutral-900 placeholder-neutral-400 focus:border-bizzi-blue focus:outline-none focus:ring-1 focus:ring-bizzi-blue/20 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-white dark:placeholder-neutral-500 dark:focus:border-bizzi-cyan dark:focus:ring-bizzi-cyan/20";
 
   const textArea = (
@@ -163,7 +165,7 @@ export default function AddCommentInput({
       }}
       onKeyDown={handleKeyDown}
       placeholder={placeholder}
-      rows={immersiveChrome ? 2 : 1}
+      rows={1}
       disabled={submitting}
       autoComplete="off"
       className={textareaClassName}
@@ -229,16 +231,15 @@ export default function AddCommentInput({
       </div>
     ) : null;
 
+  const avatarSizeClass = immersiveChrome ? "h-8 w-8" : "h-9 w-9";
   const avatar = showComposerAvatar ? (
     <div
-      className={`relative shrink-0 overflow-hidden rounded-full ${
-        immersiveChrome ? "h-9 w-9" : "h-9 w-9"
-      } ${
+      className={`relative shrink-0 overflow-hidden rounded-full ${avatarSizeClass} ${
         photo
           ? ""
           : immersiveIsDark
-            ? "flex items-center justify-center bg-white/12 text-[11px] font-semibold text-white"
-            : "flex items-center justify-center bg-teal-600 text-[11px] font-semibold text-white"
+            ? "flex items-center justify-center bg-white/12 text-[10px] font-semibold text-white"
+            : "flex items-center justify-center bg-teal-600 text-[10px] font-semibold text-white"
       }`}
       aria-hidden
     >
@@ -246,9 +247,9 @@ export default function AddCommentInput({
         <Image
           src={photo}
           alt=""
-          width={36}
-          height={36}
-          className="h-9 w-9 object-cover"
+          width={immersiveChrome ? 32 : 36}
+          height={immersiveChrome ? 32 : 36}
+          className={`${avatarSizeClass} object-cover`}
           unoptimized
         />
       ) : (
@@ -257,30 +258,46 @@ export default function AddCommentInput({
     </div>
   ) : null;
 
-  /** Immersive / file-preview composer: Shade-style compact card. */
+  /** Immersive / file-preview composer: narrow column stacked under avatar (not beside it). */
   if (immersiveChrome) {
+    const sendBtnImmersive = (
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          if (e.button === 0) e.preventDefault();
+        }}
+        onClick={() => void handleSubmit()}
+        disabled={!body.trim() || submitting}
+        style={{ backgroundColor: SHADE_SEND_BG }}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-opacity hover:brightness-105 disabled:opacity-50"
+        aria-label="Send comment"
+      >
+        <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.25} />
+      </button>
+    );
+
     return (
-      <div className="pointer-events-auto relative z-10 flex gap-2.5 sm:gap-3">
+      <div className="pointer-events-auto relative z-10 flex w-full max-w-[15.5rem] flex-col items-stretch gap-1.5">
         {avatar}
         <div
-          className={`flex min-w-0 flex-1 flex-col gap-2 rounded-2xl p-3 sm:p-3.5 ${
+          className={`flex w-full flex-col gap-1.5 rounded-xl p-2 ${
             immersiveIsDark
-              ? "border border-white/12 bg-white/[0.06] shadow-lg shadow-black/30"
-              : "border border-neutral-200/90 bg-white shadow-md shadow-neutral-900/[0.06]"
+              ? "border border-white/12 bg-white/[0.06] shadow-md shadow-black/25"
+              : "border border-neutral-200/90 bg-white shadow-sm shadow-neutral-900/[0.05]"
           }`}
         >
           <div
             className={
               immersiveIsDark
-                ? "truncate text-sm font-semibold text-white"
-                : "truncate text-sm font-semibold text-neutral-900"
+                ? "truncate pl-0.5 text-[11px] font-semibold leading-tight text-white"
+                : "truncate pl-0.5 text-[11px] font-semibold leading-tight text-neutral-900"
             }
           >
             {displayName}
           </div>
 
           <div
-            className={`relative flex min-h-[2.75rem] w-full min-w-0 items-start gap-2 px-2.5 py-1.5 ${inputRowShell}`}
+            className={`relative flex min-h-[2.25rem] w-full min-w-0 items-start gap-1.5 px-2 py-1 ${inputRowShell}`}
             onPointerDown={(e) => {
               const t = e.target as HTMLElement;
               if (t.closest("button")) return;
@@ -293,7 +310,7 @@ export default function AddCommentInput({
               <button
                 type="button"
                 onClick={capturePinnedFromPlayhead}
-                className="mt-1.5 shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold tabular-nums leading-none text-white sm:text-[11px]"
+                className="mt-1 shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold tabular-nums leading-none text-white"
                 style={{ backgroundColor: SHADE_CHIP_BG }}
                 title="Current playhead time"
               >
@@ -303,14 +320,14 @@ export default function AddCommentInput({
             {textArea}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-0.5">
+          <div className="flex w-full flex-wrap items-center justify-between gap-1.5">
+            <div className="flex items-center gap-px">
               {useVideoTools ? (
                 <>
                   <button
                     type="button"
                     onClick={capturePinnedFromPlayhead}
-                    className={`rounded-lg p-1.5 transition-colors ${
+                    className={`rounded-md p-1 transition-colors ${
                       immersiveIsDark
                         ? "text-violet-300 hover:bg-white/10"
                         : "text-violet-700 hover:bg-violet-50"
@@ -318,13 +335,13 @@ export default function AddCommentInput({
                     title="Capture time from video"
                     aria-label="Insert timestamp from playhead"
                   >
-                    <Timer className="h-4 w-4" strokeWidth={1.75} />
+                    <Timer className="h-3.5 w-3.5" strokeWidth={1.75} />
                   </button>
                   <button
                     type="button"
                     onClick={clearPinnedTimestamp}
                     disabled={pinnedVideoSec == null}
-                    className={`rounded-lg p-1.5 transition-colors disabled:opacity-35 ${
+                    className={`rounded-md p-1 transition-colors disabled:opacity-35 ${
                       immersiveIsDark
                         ? "text-violet-300 hover:bg-white/10"
                         : "text-violet-700 hover:bg-violet-50"
@@ -332,26 +349,26 @@ export default function AddCommentInput({
                     title="Clear pinned time"
                     aria-label="Clear pinned timestamp"
                   >
-                    <CircleSlash className="h-4 w-4" strokeWidth={1.75} />
+                    <CircleSlash className="h-3.5 w-3.5" strokeWidth={1.75} />
                   </button>
                 </>
               ) : null}
               <button
                 type="button"
                 disabled
-                className={`cursor-not-allowed rounded-lg p-1.5 opacity-45 ${
+                className={`cursor-not-allowed rounded-md p-1 opacity-45 ${
                   immersiveIsDark ? "text-violet-300" : "text-violet-700"
                 }`}
                 title="Attachments coming soon"
                 aria-label="Attachments unavailable"
               >
-                <Paperclip className="h-4 w-4" strokeWidth={1.75} />
+                <Paperclip className="h-3.5 w-3.5" strokeWidth={1.75} />
               </button>
             </div>
 
-            <div className="ml-auto flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-1.5">
               {visibilityControl}
-              {sendButton}
+              {sendBtnImmersive}
             </div>
           </div>
 
@@ -359,7 +376,7 @@ export default function AddCommentInput({
             <button
               type="button"
               onClick={onCancel}
-              className="self-start text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
+              className="self-start pl-0.5 text-[10px] text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
             >
               Cancel
             </button>

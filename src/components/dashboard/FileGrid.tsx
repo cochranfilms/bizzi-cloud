@@ -1104,6 +1104,19 @@ export default function FileGrid({
     currentDrivePath,
   ]);
 
+  /** Only replace the grid with the uploading placeholder when Uppy has real queue work (not merely an open panel). */
+  const storageFolderUppyUploadingOverlay = useMemo(() => {
+    if (!storageUploadSessionActiveHere || useFilteredScoped) return false;
+    const dock = uppyUpload?.uploadDockSummary;
+    return Boolean(
+      dock && dock.fileCount > 0 && !dock.allComplete
+    );
+  }, [
+    storageUploadSessionActiveHere,
+    useFilteredScoped,
+    uppyUpload?.uploadDockSummary,
+  ]);
+
   const enableStorageNestedFolders = useCallback(async () => {
     if (!currentDrive) return;
     setStorageUpgradeError(null);
@@ -3344,7 +3357,7 @@ export default function FileGrid({
               })}
             </div>
             )
-          ) : storageUploadSessionActiveHere && !useFilteredScoped ? (
+          ) : storageFolderUppyUploadingOverlay ? (
             <div
               className={
                 embeddedFolderBrowse
@@ -3404,7 +3417,7 @@ export default function FileGrid({
                             onClick={() => workspaceQuickActionsRegistry.openNewFolder()}
                             className="font-semibold text-bizzi-blue underline-offset-4 hover:underline dark:text-bizzi-cyan"
                           >
-                            Create folder
+                            New Folder
                           </button>
                           <span className="text-neutral-400 dark:text-neutral-500" aria-hidden>
                             {" "}
@@ -3931,7 +3944,7 @@ export default function FileGrid({
                   }}
                 >
                   <FolderPlus className="h-4 w-4 shrink-0" />
-                  {isStorageV2FolderBrowse ? "New folder in Storage" : "Create folder"}
+                  {isStorageV2FolderBrowse ? "New Folder" : "Create folder"}
                 </button>
                 <button
                   type="button"
