@@ -6,6 +6,7 @@ import {
   ChevronDown,
   FolderInput,
   FolderPlus,
+  MoreHorizontal,
   Pencil,
   Pin,
   Share2,
@@ -22,6 +23,8 @@ export interface StorageLocationMenuProps {
   onShare: () => void;
   onMove?: () => void;
   onTogglePin: () => void;
+  /** Compact icon trigger for minimal headers (same menu actions). */
+  triggerVariant?: "default" | "icon";
 }
 
 export default function StorageLocationMenu({
@@ -33,9 +36,11 @@ export default function StorageLocationMenu({
   onShare,
   onMove,
   onTogglePin,
+  triggerVariant = "default",
 }: StorageLocationMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const iconTrigger = triggerVariant === "icon";
 
   useEffect(() => {
     if (!open) return;
@@ -47,18 +52,36 @@ export default function StorageLocationMenu({
   }, [open]);
 
   return (
-    <div className="relative max-w-[min(100%,28rem)] min-w-0" ref={wrapRef}>
+    <div
+      className={`relative min-w-0 ${iconTrigger ? "shrink-0" : "max-w-[min(100%,28rem)]"}`}
+      ref={wrapRef}
+    >
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex max-w-full items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-left text-sm font-medium text-neutral-900 shadow-sm hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-white dark:hover:bg-neutral-800"
+        className={
+          iconTrigger
+            ? "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-transparent text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+            : "inline-flex max-w-full items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-left text-sm font-medium text-neutral-900 shadow-sm hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-white dark:hover:bg-neutral-800"
+        }
         title={pathLabel}
+        aria-label={iconTrigger ? `Folder actions — ${pathLabel}` : undefined}
       >
-        <span className="truncate">{pathLabel}</span>
-        <ChevronDown className={`h-4 w-4 shrink-0 opacity-70 ${open ? "rotate-180" : ""}`} />
+        {iconTrigger ? (
+          <MoreHorizontal className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+        ) : (
+          <>
+            <span className="truncate">{pathLabel}</span>
+            <ChevronDown className={`h-4 w-4 shrink-0 opacity-70 ${open ? "rotate-180" : ""}`} />
+          </>
+        )}
       </button>
       {open ? (
-        <div className="absolute left-0 top-full z-[60] mt-1 min-w-[240px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+        <div
+          className={`absolute top-full z-[60] mt-1 min-w-[240px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900 ${
+            iconTrigger ? "right-0" : "left-0"
+          }`}
+        >
           <MenuRow
             icon={FolderPlus}
             label="New folder"

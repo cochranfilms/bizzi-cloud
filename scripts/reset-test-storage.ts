@@ -21,12 +21,13 @@ require("dotenv").config({ path: ".env.local" });
 const fs = require("fs");
 const path = require("path");
 
-/** B2 key prefixes used by this app (see src/lib/b2.ts, uploads, LUT URLs). */
+/** B2 key prefixes used by this app (see src/lib/b2.ts, backup-object-key, bizzi-image-thumbnail-key, LUT routes). */
 const B2_PREFIXES_TO_WIPE = [
   "backups/",
   "content/",
   "proxies/",
   "thumbnails/",
+  "image-thumbnails/",
   "cover-derivatives/",
   "lut-baked/",
   "drives/",

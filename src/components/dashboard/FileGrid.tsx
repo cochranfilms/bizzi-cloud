@@ -1041,6 +1041,23 @@ export default function FileGrid({
       (driveBaseName === "Storage" && !isLinkedDriveFolderModelV2(currentDriveMeta)) ||
       isStorageV2VirtualPathMode);
 
+  const storageUploadSessionActiveHere = useMemo(() => {
+    const t = uppyUpload?.uploadPanelTarget ?? null;
+    if (!t || !currentDrive) return false;
+    if (t.driveId !== currentDrive.id) return false;
+    if (isStorageV2FolderBrowse) {
+      return (t.storageFolderId ?? null) === (storageParentFolderId ?? null);
+    }
+    const norm = (p: string) => p.replace(/^\/+|\/+$/g, "");
+    return norm(t.pathPrefix ?? "") === norm(currentDrivePath ?? "");
+  }, [
+    uppyUpload?.uploadPanelTarget,
+    currentDrive,
+    isStorageV2FolderBrowse,
+    storageParentFolderId,
+    currentDrivePath,
+  ]);
+
   const enableStorageNestedFolders = useCallback(async () => {
     if (!currentDrive) return;
     setStorageUpgradeError(null);
@@ -1163,6 +1180,58 @@ export default function FileGrid({
     pinItem,
     unpinItem,
     refetchPinned,
+  ]);
+
+  const handleFolderBrowseBack = useCallback(() => {
+    if (isStorageV2FolderBrowse && storageParentFolderId) {
+      void (async () => {
+        const token = await getAuthToken();
+        if (!token || !currentDrive || !storageParentFolderId) return;
+        const res = await fetch(
+          `/api/storage-folders/ancestors?folder_id=${encodeURIComponent(storageParentFolderId)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          ancestors?: Array<{ id: string }>;
+        };
+        const list = data.ancestors ?? [];
+        const parentId = list.length >= 2 ? list[list.length - 2]!.id : null;
+        const sp = new URLSearchParams(searchParams.toString());
+        sp.set("drive", currentDrive.id);
+        if (parentId) sp.set("folder", parentId);
+        else sp.delete("folder");
+        sp.delete("path");
+        const q = sp.toString();
+        router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+        setSelectedFileIds(new Set());
+      })();
+      return;
+    }
+    if (currentDrivePath) {
+      setCurrentDrivePath("");
+      setSelectedFileIds(new Set());
+      return;
+    }
+    if (showFilesLandingTabBar && filesLandingTab === "storage") {
+      clearFlatFilesUrlAndDrive();
+      setFilesLandingTab("recents");
+      return;
+    }
+    closeDrive();
+  }, [
+    isStorageV2FolderBrowse,
+    storageParentFolderId,
+    currentDrive,
+    searchParams,
+    pathname,
+    router,
+    currentDrivePath,
+    setCurrentDrivePath,
+    showFilesLandingTabBar,
+    filesLandingTab,
+    clearFlatFilesUrlAndDrive,
+    closeDrive,
   ]);
 
   const storageRenameCurrentName = isStorageV2FolderBrowse
@@ -1453,6 +1522,13 @@ export default function FileGrid({
       currentDrive.name
     );
   }, [currentDrive, useFilteredScoped, displayedFiles, macosPackagesForFolder]);
+
+  const showFolderLoadingPlaceholder =
+    !!currentDrive &&
+    !useFilteredScoped &&
+    driveFilesLoading &&
+    subfolderItems.length === 0 &&
+    displayedFilesWithMacosPackages.length === 0;
 
   useEffect(() => {
     if (!packageInfoId) {
@@ -2391,94 +2467,163 @@ export default function FileGrid({
         data-view-type={currentDrive ? "folder" : "all-files"}
       >
       <FilesViewWrapper>
-      {currentDrive && (
-        <div className="flex flex-wrap items-center gap-2 py-4 text-sm">
-          <button
-            type="button"
-            onClick={
-              isStorageV2FolderBrowse && storageParentFolderId
-                ? () => {
-                    void (async () => {
-                      const token = await getAuthToken();
-                      if (!token || !currentDrive || !storageParentFolderId) return;
-                      const res = await fetch(
-                        `/api/storage-folders/ancestors?folder_id=${encodeURIComponent(storageParentFolderId)}`,
-                        { headers: { Authorization: `Bearer ${token}` } }
-                      );
-                      if (!res.ok) return;
-                      const data = (await res.json()) as {
-                        ancestors?: Array<{ id: string }>;
-                      };
-                      /** Root→…→parent→current; parent is always second-to-last (works at any nesting depth). */
-                      const list = data.ancestors ?? [];
-                      const parentId =
-                        list.length >= 2 ? list[list.length - 2]!.id : null;
-                      const sp = new URLSearchParams(searchParams.toString());
-                      sp.set("drive", currentDrive.id);
-                      if (parentId) sp.set("folder", parentId);
-                      else sp.delete("folder");
-                      sp.delete("path");
-                      const q = sp.toString();
-                      router.replace(q ? `${pathname}?${q}` : pathname, {
-                        scroll: false,
-                      });
-                      /** loadDriveFiles runs from URL `folder` sync effect only */
-                      setSelectedFileIds(new Set());
-                    })();
-                  }
-                : currentDrivePath
-                  ? () => {
-                      setCurrentDrivePath("");
-                      setSelectedFileIds(new Set());
-                    }
-                  : showFilesLandingTabBar && filesLandingTab === "storage"
-                    ? () => {
-                        clearFlatFilesUrlAndDrive();
-                        setFilesLandingTab("recents");
-                      }
-                    : closeDrive
-            }
-            className="flex items-center gap-1 rounded-lg px-3 py-2 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Back
-          </button>
-          <span className="text-neutral-400 dark:text-neutral-500">/</span>
-          {isStorageV2FolderBrowse ? (
-            <StorageLocationMenu
-              pathLabel={storagePathMenuLabel}
-              isInsideSubfolder={!!storageParentFolderId}
-              folderPinned={storageMenuFolderPinned}
-              onNewFolder={() => setStoragePathCreateOpen(true)}
-              onRename={storageParentFolderId ? () => setStoragePathRenameOpen(true) : undefined}
-              onShare={openStoragePathShare}
-              onMove={storageParentFolderId ? () => setStoragePathMoveOpen(true) : undefined}
-              onTogglePin={() => void toggleStoragePathPin()}
-            />
-          ) : (
-            <>
-              <span className="flex flex-wrap items-center gap-2 font-medium text-neutral-900 dark:text-white">
-                <span>{currentDrive.name}</span>
-                {isStorageLegacyVirtualBrowse ? (
-                  <span className="inline-flex shrink-0 items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-100">
-                    Classic layout
-                  </span>
-                ) : null}
-              </span>
-              {currentDrivePath ? (
-                <>
-                  <span className="text-neutral-400 dark:text-neutral-500">/</span>
-                  <span className="font-medium text-neutral-900 dark:text-white">
-                    {isGalleryMediaDrive
+      {currentDrive &&
+        (embeddedFolderBrowse ? (
+          <div className="flex min-h-[1.25rem] items-center gap-2 pb-1.5 pt-0.5 text-sm">
+            {(() => {
+              const driveTitle = teamAwareDriveName(
+                currentDriveMeta?.name ?? currentDrive.name
+              );
+              const inSubfolder =
+                !!storageParentFolderId ||
+                !!(currentDrivePath && String(currentDrivePath).trim());
+              const folderSegmentLabel =
+                storageParentFolderId != null
+                  ? storagePathMenuLabel
+                  : currentDrivePath
+                    ? isGalleryMediaDrive
                       ? formatGalleryMediaFolderBreadcrumb(currentDrivePath, galleries)
-                      : currentDrivePath}
-                  </span>
+                      : currentDrivePath
+                    : "";
+              return (
+                <>
+                  {inSubfolder ? (
+                    <div className="flex min-w-0 flex-1 items-baseline gap-1.5 text-[11px] leading-tight tracking-tight text-neutral-500 sm:text-xs dark:text-neutral-400">
+                      <button
+                        type="button"
+                        onClick={handleFolderBrowseBack}
+                        className="min-w-0 truncate text-left font-normal text-neutral-600 hover:text-neutral-900 hover:underline dark:text-neutral-400 dark:hover:text-white"
+                        title={`Back (${driveTitle})`}
+                      >
+                        {driveTitle}
+                      </button>
+                      <span className="shrink-0 opacity-45" aria-hidden>
+                        /
+                      </span>
+                      <span
+                        className="min-w-0 truncate font-medium text-neutral-700 dark:text-neutral-200"
+                        title={folderSegmentLabel}
+                      >
+                        {folderSegmentLabel}
+                      </span>
+                      {isStorageLegacyVirtualBrowse ? (
+                        <span className="inline-flex shrink-0 items-center rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-100">
+                          Classic
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="min-w-0 flex-1" aria-hidden />
+                  )}
+                  {isStorageV2FolderBrowse ? (
+                    <StorageLocationMenu
+                      triggerVariant="icon"
+                      pathLabel={storagePathMenuLabel}
+                      isInsideSubfolder={!!storageParentFolderId}
+                      folderPinned={storageMenuFolderPinned}
+                      onNewFolder={() => setStoragePathCreateOpen(true)}
+                      onRename={
+                        storageParentFolderId ? () => setStoragePathRenameOpen(true) : undefined
+                      }
+                      onShare={openStoragePathShare}
+                      onMove={
+                        storageParentFolderId ? () => setStoragePathMoveOpen(true) : undefined
+                      }
+                      onTogglePin={() => void toggleStoragePathPin()}
+                    />
+                  ) : null}
                 </>
-              ) : null}
-            </>
-          )}
-        </div>
-      )}
+              );
+            })()}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 py-4 text-sm">
+            <button
+              type="button"
+              onClick={
+                isStorageV2FolderBrowse && storageParentFolderId
+                  ? () => {
+                      void (async () => {
+                        const token = await getAuthToken();
+                        if (!token || !currentDrive || !storageParentFolderId) return;
+                        const res = await fetch(
+                          `/api/storage-folders/ancestors?folder_id=${encodeURIComponent(storageParentFolderId)}`,
+                          { headers: { Authorization: `Bearer ${token}` } }
+                        );
+                        if (!res.ok) return;
+                        const data = (await res.json()) as {
+                          ancestors?: Array<{ id: string }>;
+                        };
+                        /** Root→…→parent→current; parent is always second-to-last (works at any nesting depth). */
+                        const list = data.ancestors ?? [];
+                        const parentId =
+                          list.length >= 2 ? list[list.length - 2]!.id : null;
+                        const sp = new URLSearchParams(searchParams.toString());
+                        sp.set("drive", currentDrive.id);
+                        if (parentId) sp.set("folder", parentId);
+                        else sp.delete("folder");
+                        sp.delete("path");
+                        const q = sp.toString();
+                        router.replace(q ? `${pathname}?${q}` : pathname, {
+                          scroll: false,
+                        });
+                        /** loadDriveFiles runs from URL `folder` sync effect only */
+                        setSelectedFileIds(new Set());
+                      })();
+                    }
+                  : currentDrivePath
+                    ? () => {
+                        setCurrentDrivePath("");
+                        setSelectedFileIds(new Set());
+                      }
+                    : showFilesLandingTabBar && filesLandingTab === "storage"
+                      ? () => {
+                          clearFlatFilesUrlAndDrive();
+                          setFilesLandingTab("recents");
+                        }
+                      : closeDrive
+              }
+              className="flex items-center gap-1 rounded-lg px-3 py-2 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back
+            </button>
+            <span className="text-neutral-400 dark:text-neutral-500">/</span>
+            {isStorageV2FolderBrowse ? (
+              <StorageLocationMenu
+                pathLabel={storagePathMenuLabel}
+                isInsideSubfolder={!!storageParentFolderId}
+                folderPinned={storageMenuFolderPinned}
+                onNewFolder={() => setStoragePathCreateOpen(true)}
+                onRename={storageParentFolderId ? () => setStoragePathRenameOpen(true) : undefined}
+                onShare={openStoragePathShare}
+                onMove={storageParentFolderId ? () => setStoragePathMoveOpen(true) : undefined}
+                onTogglePin={() => void toggleStoragePathPin()}
+              />
+            ) : (
+              <>
+                <span className="flex flex-wrap items-center gap-2 font-medium text-neutral-900 dark:text-white">
+                  <span>{currentDrive.name}</span>
+                  {isStorageLegacyVirtualBrowse ? (
+                    <span className="inline-flex shrink-0 items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-100">
+                      Classic layout
+                    </span>
+                  ) : null}
+                </span>
+                {currentDrivePath ? (
+                  <>
+                    <span className="text-neutral-400 dark:text-neutral-500">/</span>
+                    <span className="font-medium text-neutral-900 dark:text-white">
+                      {isGalleryMediaDrive
+                        ? formatGalleryMediaFolderBreadcrumb(currentDrivePath, galleries)
+                        : currentDrivePath}
+                    </span>
+                  </>
+                ) : null}
+              </>
+            )}
+          </div>
+        ))}
 
       {currentDrive && isStorageLegacyVirtualBrowse ? (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/35 dark:text-amber-50">
@@ -2843,6 +2988,16 @@ export default function FileGrid({
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
             No files match your filters. Try adjusting or clearing filters.
           </div>
+        ) : showFolderLoadingPlaceholder ? (
+          <div
+            className="flex min-h-[min(380px,52vh)] items-center justify-center px-3 py-10 sm:px-6"
+            role="status"
+          >
+            <span className="inline-flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent dark:border-bizzi-cyan dark:border-t-transparent" />
+              Loading…
+            </span>
+          </div>
         ) : useFilteredScoped || subfolderItems.length > 0 || displayedFilesWithMacosPackages.length > 0 ? (
             viewMode === "list" ? (
               <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
@@ -3100,6 +3255,26 @@ export default function FileGrid({
               })}
             </div>
             )
+          ) : storageUploadSessionActiveHere && !useFilteredScoped ? (
+            <div
+              className="flex min-h-[min(380px,52vh)] items-center justify-center px-3 py-10 sm:px-6"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="max-w-md text-center">
+                <Loader2
+                  className="mx-auto mb-3 h-9 w-9 animate-spin text-bizzi-blue dark:text-bizzi-cyan"
+                  strokeWidth={1.5}
+                  aria-hidden
+                />
+                <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                  Uploading files…
+                </p>
+                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  Your files will appear here as they finish.
+                </p>
+              </div>
+            </div>
           ) : (
             <div className="flex min-h-[min(380px,52vh)] items-center justify-center px-3 py-10 sm:px-6">
               <div

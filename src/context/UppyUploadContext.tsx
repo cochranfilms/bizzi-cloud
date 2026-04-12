@@ -63,6 +63,12 @@ type PanelTarget = {
   resolvedBy: string | null;
 };
 
+export type UppyUploadPanelTarget = {
+  driveId: string;
+  pathPrefix: string;
+  storageFolderId: string | null;
+};
+
 interface UppyUploadContextValue {
   openPanel: (
     driveId: string,
@@ -73,6 +79,8 @@ interface UppyUploadContextValue {
   closePanel: () => void;
   /** True while the global Uppy modal is open (e.g. faster gallery asset polling during uploads). */
   isUploadPanelOpen: boolean;
+  /** When the panel is open, the destination key so file views can suppress empty states during upload. */
+  uploadPanelTarget: UppyUploadPanelTarget | null;
 }
 
 const UppyUploadContext = createContext<UppyUploadContextValue | null>(null);
@@ -308,8 +316,15 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
     await onUploadComplete?.();
   }, [bumpStorageVersion, onUploadComplete]);
 
+  const uploadPanelTarget: UppyUploadPanelTarget | null =
+    open && driveId
+      ? { driveId, pathPrefix, storageFolderId }
+      : null;
+
   return (
-    <UppyUploadContext.Provider value={{ openPanel, closePanel, isUploadPanelOpen: open }}>
+    <UppyUploadContext.Provider
+      value={{ openPanel, closePanel, isUploadPanelOpen: open, uploadPanelTarget }}
+    >
       {children}
       {driveId && (
         <UppyUploadModal
