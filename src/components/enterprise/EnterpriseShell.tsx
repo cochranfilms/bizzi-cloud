@@ -55,7 +55,7 @@ export default function EnterpriseShell({
       {/* Main content + right panel row */}
       <div className="flex min-h-0 min-w-0 flex-1">
         <FilesFilterTopChromeProvider>
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="fixed z-30 xl:hidden left-[max(0.75rem,env(safe-area-inset-left))] top-20 md:top-16">
               <button
                 type="button"

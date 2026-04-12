@@ -85,7 +85,7 @@ export default function DesktopShell({
           )}
 
           <FilesFilterTopChromeProvider>
-            <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               {/* Floating buttons on narrow screens: left = mount panel (Editor/Full Frame only), right = backup panel */}
               {hasEditor && !mountPanelOpen && (
                 <div className="fixed left-4 top-16 z-30 md:hidden">

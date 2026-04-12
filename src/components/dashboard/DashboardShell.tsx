@@ -116,7 +116,7 @@ export default function DashboardShell({
         <div className="flex min-h-0 min-w-0 flex-1 gap-0 xl:gap-7">
           {/* Main vs workspace rail: xl-only gap widens the “lane” so page scroll isn’t confused with embedded panes */}
           <FilesFilterTopChromeProvider>
-            <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               {/* Mobile panel button */}
               <div
                 className={`fixed z-30 xl:hidden left-[max(0.75rem,env(safe-area-inset-left))] ${mobilePanelBtnTop}`}
