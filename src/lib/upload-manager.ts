@@ -6,6 +6,7 @@
 
 import type { UploadCreateResponse, FileFingerprint } from "@/types/upload";
 import { getUploadApiBaseUrl } from "@/lib/upload-api-base";
+import { MULTIPART_THRESHOLD_BYTES } from "@/lib/multipart-thresholds";
 
 const SAMPLE_SIZE = 64 * 1024;
 
@@ -190,8 +191,6 @@ async function runWithConcurrency<T, R>(
   return results;
 }
 
-const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
-
 /** Above this size, skip content hash (use fingerprint only) to avoid blocking upload start. */
 const CONTENT_HASH_SKIP_THRESHOLD = 20 * 1024 * 1024 * 1024;
 
@@ -356,7 +355,7 @@ export class UploadManager {
         }
       }
 
-      if (file.size < MULTIPART_THRESHOLD) {
+      if (file.size < MULTIPART_THRESHOLD_BYTES) {
         const urlRes = await this.apiFetch("/api/uploads/start-upload", {
           method: "POST",
           body: {
@@ -430,14 +429,19 @@ export class UploadManager {
         await this.invokeOnComplete({ fileId, objectKey: create.existingObjectKey });
         return { objectKey: create.existingObjectKey };
       }
-      if (!create.uploadId || !create.parts?.length || !create.sessionId) {
+      if (
+        !create.uploadId ||
+        !create.sessionId ||
+        create.totalParts == null ||
+        create.totalParts < 1
+      ) {
         throw new Error("Invalid create response");
       }
 
-      let parts = create.parts as { partNumber: number; uploadUrl: string }[];
+      let parts = (create.parts ?? []) as { partNumber: number; uploadUrl: string }[];
       const { objectKey, uploadId, recommendedPartSize, recommendedConcurrency, totalParts } = create;
 
-      const useLazyFetch = totalParts > LAZY_FETCH_THRESHOLD;
+      const useLazyFetch = totalParts > LAZY_FETCH_THRESHOLD || parts.length === 0;
 
       if (!useLazyFetch && parts.length < totalParts) {
         const batchSize = 200;
@@ -534,7 +538,7 @@ export class UploadManager {
         throw new Error((data as { error?: string }).error ?? "Failed to complete upload");
       }
       const complete = (await completeRes.json()) as { objectKey: string };
-      this.reportProgress(fileId, file.name, file.size, file.size, parts.length, parts.length, "completed");
+      this.reportProgress(fileId, file.name, file.size, file.size, totalParts, totalParts, "completed");
       await this.invokeOnComplete({ fileId, objectKey: complete.objectKey });
       removeSession(fileId);
       return { objectKey: complete.objectKey };

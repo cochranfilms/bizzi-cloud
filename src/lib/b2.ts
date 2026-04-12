@@ -1,5 +1,9 @@
 import { createHash } from "crypto";
 import {
+  BROWSER_MULTIPART_CONCURRENCY,
+  MULTIPART_THRESHOLD_BYTES,
+} from "@/lib/multipart-thresholds";
+import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
@@ -66,8 +70,10 @@ export const MULTIPART_PRESIGN_EXPIRY = 7 * 24 * 60 * 60;
 /** B2 minimum part size is 5MB. Use 8MB for balance of throughput and memory. */
 export const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
 
-/** Use multipart for files larger than this (must be > 5MB for B2). */
-export const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
+/** Re-export for call sites that already import multipart policy from `b2`. */
+export const MULTIPART_THRESHOLD = MULTIPART_THRESHOLD_BYTES;
+
+export { BROWSER_MULTIPART_CONCURRENCY };
 
 export interface AdaptivePartPlan {
   partSize: number;
@@ -115,6 +121,30 @@ export function computeAdaptivePartPlan(fileSizeBytes: number): AdaptivePartPlan
     totalParts = Math.ceil(fileSizeBytes / partSize);
   }
   return { partSize, totalParts, recommendedConcurrency: concurrency };
+}
+
+/**
+ * Browser uploads (Uppy AwsS3 + `/api/uploads/start-upload` multipart): 32 MiB parts up to 2 GiB,
+ * 64 MiB parts above 2 GiB, bounded concurrency {@link BROWSER_MULTIPART_CONCURRENCY}.
+ * Migration / workers keep {@link computeAdaptivePartPlan}.
+ */
+export function computeBrowserMultipartPartPlan(fileSizeBytes: number): AdaptivePartPlan {
+  if (fileSizeBytes === 0) {
+    return {
+      partSize: 8 * 1024 * 1024,
+      totalParts: 1,
+      recommendedConcurrency: 1,
+    };
+  }
+  const twoGiB = 2 * 1024 * 1024 * 1024;
+  let partSize = fileSizeBytes > twoGiB ? 64 * 1024 * 1024 : 32 * 1024 * 1024;
+  let totalParts = Math.ceil(fileSizeBytes / partSize);
+  if (totalParts > B2_MAX_PARTS) {
+    partSize = Math.ceil(fileSizeBytes / B2_MAX_PARTS);
+    partSize = Math.max(B2_PART_MIN, Math.min(partSize, B2_PART_MAX));
+    totalParts = Math.ceil(fileSizeBytes / partSize);
+  }
+  return { partSize, totalParts, recommendedConcurrency: BROWSER_MULTIPART_CONCURRENCY };
 }
 
 /** Batch create presigned URLs for multiple parts (reduces API round-trips). */

@@ -418,8 +418,8 @@ export default function UppyUploadModal({
       endpoint:
         typeof window !== "undefined" ? `${getUploadApiBaseUrl()}/api/uppy` : "",
       headers: {} as Record<string, string>,
-      /** Lower than default 6 to reduce concurrent B2/S3 sockets during huge .fcpbundle uploads */
-      limit: 3,
+      /** Aligned with `BROWSER_MULTIPART_CONCURRENCY` / server upload policy */
+      limit: 6,
       shouldUseMultipart: shouldUseUppyS3Multipart,
       retryDelays: [0, 1000, 3000, 5000, 10000],
       uploadPartBytes: uploadPartBytesCompat,
@@ -700,11 +700,7 @@ export default function UppyUploadModal({
     uppy.on("upload-success", async (file) => {
       if (!file) return;
       const size = file.size ?? 0;
-      if (
-        size > 0 &&
-        size <= 5 * 1024 * 1024 &&
-        !shouldUseUppyS3Multipart({ size, meta: file.meta ?? {} })
-      ) {
+      if (size > 0 && !shouldUseUppyS3Multipart({ size, meta: file.meta ?? {} })) {
         const meta = file.meta ?? {};
         const metaDriveId = meta.driveId ?? meta.drive_id;
         const relativePath = meta.relativePath ?? meta.relative_path ?? file.name ?? "";

@@ -37,7 +37,8 @@ async function runWithConcurrency<T, R>(
  * "Controller is already closed" race when rclone/NLE disconnects mid-upload. */
 const LARGE_PUT_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50 MB
 /** Direct multipart to B2 via `/api/uploads/start-upload` (avoids single-PUT bottleneck). */
-const WEBDAV_MULTIPART_THRESHOLD_BYTES = 5 * 1024 * 1024; // align with server MULTIPART_THRESHOLD
+/** Keep in sync with `MULTIPART_THRESHOLD_BYTES` in `src/lib/multipart-thresholds.ts`. */
+const WEBDAV_MULTIPART_THRESHOLD_BYTES = 100 * 1024 * 1024;
 const API_FETCH_TIMEOUT_MS = 30000; // Production API can be slow (cold start, Firestore)
 const API_FETCH_RETRY_DELAY_MS = 1500;
 

@@ -1,11 +1,9 @@
 import {
   createMultipartUpload,
-  createPresignedPartUrlsBatch,
   createPresignedUploadUrl,
   objectExists,
   isB2Configured,
-  computeAdaptivePartPlan,
-  MULTIPART_PRESIGN_EXPIRY,
+  computeBrowserMultipartPartPlan,
   MULTIPART_THRESHOLD,
 } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
@@ -21,7 +19,6 @@ const isDevAuthBypass = () =>
   process.env.NODE_ENV === "development";
 
 const SESSION_EXPIRY_HOURS = 24;
-const MAX_PARTS_IN_RESPONSE = 200;
 
 export async function handleStartUpload(request: Request): Promise<NextResponse> {
   if (!isB2Configured()) {
@@ -223,7 +220,8 @@ export async function handleStartUpload(request: Request): Promise<NextResponse>
     });
   }
 
-  const { partSize, totalParts, recommendedConcurrency } = computeAdaptivePartPlan(sizeBytes);
+  const { partSize, totalParts, recommendedConcurrency } =
+    computeBrowserMultipartPartPlan(sizeBytes);
 
   let uploadId: string;
   try {
@@ -235,13 +233,6 @@ export async function handleStartUpload(request: Request): Promise<NextResponse>
     }
     throw initErr;
   }
-
-  const partNumbers = Array.from({ length: totalParts }, (_, i) => i + 1);
-  const partsToSign =
-    totalParts <= MAX_PARTS_IN_RESPONSE
-      ? partNumbers
-      : partNumbers.slice(0, MAX_PARTS_IN_RESPONSE);
-  const parts = await createPresignedPartUrlsBatch(objectKey, uploadId, partsToSign, MULTIPART_PRESIGN_EXPIRY);
 
   const sessionRef = await db.collection("upload_sessions").add({
     userId: uid,
@@ -278,7 +269,7 @@ export async function handleStartUpload(request: Request): Promise<NextResponse>
     recommendedPartSize: partSize,
     recommendedConcurrency,
     totalParts,
-    parts,
+    parts: [],
     expiresAt: expiresIso,
     reservation_id,
     alreadyExists: false,

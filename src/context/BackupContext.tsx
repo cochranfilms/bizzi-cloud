@@ -196,7 +196,6 @@ async function getWorkspaceFieldsForOrgDrive(
 
 /** B2 minimum part size 5MB; use 8MB for throughput. Must match server. */
 const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
-const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
 const UPLOAD_CONCURRENCY = 6;
 
 /** Above this size, skip content hash to avoid blocking upload start (8K/BRAW). */

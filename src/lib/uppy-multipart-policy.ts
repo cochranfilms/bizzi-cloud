@@ -1,4 +1,4 @@
-const MULTIPART_SIZE_THRESHOLD = 5 * 1024 * 1024;
+import { MULTIPART_THRESHOLD_BYTES } from "@/lib/multipart-thresholds";
 
 /**
  * When to use S3 multipart instead of a single presigned PUT (Uppy AwsS3).
@@ -15,7 +15,7 @@ export function shouldUseUppyS3Multipart(file: {
   meta?: Record<string, unknown>;
 }): boolean {
   const s = file.size ?? 0;
-  if (s > MULTIPART_SIZE_THRESHOLD) return true;
+  if (s > MULTIPART_THRESHOLD_BYTES) return true;
   if (s === 0) return true;
 
   const meta = file.meta ?? {};

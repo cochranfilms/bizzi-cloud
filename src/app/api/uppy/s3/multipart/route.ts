@@ -6,10 +6,8 @@
  */
 import {
   createMultipartUpload,
-  createPresignedPartUrlsBatch,
   isB2Configured,
-  computeAdaptivePartPlan,
-  MULTIPART_PRESIGN_EXPIRY,
+  computeBrowserMultipartPartPlan,
 } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { checkAndReserveUploadBytes } from "@/lib/storage-upload-reservation";
@@ -25,7 +23,6 @@ const isDevAuthBypass = () =>
   process.env.NODE_ENV === "development";
 
 const SESSION_EXPIRY_HOURS = 24;
-const MAX_PARTS_IN_RESPONSE = 200;
 
 export async function POST(request: Request) {
   if (!isB2Configured()) {
@@ -129,7 +126,7 @@ export async function POST(request: Request) {
   }
 
   const contentType = type ?? "application/octet-stream";
-  const { partSize, totalParts } = computeAdaptivePartPlan(sizeBytes);
+  const { partSize, totalParts } = computeBrowserMultipartPartPlan(sizeBytes);
 
   let uploadId: string;
   try {
@@ -141,18 +138,6 @@ export async function POST(request: Request) {
     }
     throw initErr;
   }
-
-  const partNumbers = Array.from({ length: totalParts }, (_, i) => i + 1);
-  const partsToSign =
-    totalParts <= MAX_PARTS_IN_RESPONSE
-      ? partNumbers
-      : partNumbers.slice(0, MAX_PARTS_IN_RESPONSE);
-  const parts = await createPresignedPartUrlsBatch(
-    objectKey,
-    uploadId,
-    partsToSign,
-    MULTIPART_PRESIGN_EXPIRY
-  );
 
   const db = getAdminFirestore();
   const expiresAt = new Date();
