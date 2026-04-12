@@ -61,7 +61,7 @@ import {
 import {
   compareStorageFolderRowsTransfersRootFirst,
   storageFolderRowRecencyMs,
-} from "@/lib/storage-folders";
+} from "@/lib/storage-folders/folder-display-order";
 import { COLLECTION_STORAGE_FOLDERS } from "@/lib/storage-folders/types";
 import {
   registerCloudFilesPostMutationRefresh,
