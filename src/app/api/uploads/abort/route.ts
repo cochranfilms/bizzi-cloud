@@ -1,6 +1,7 @@
 import { abortMultipartUpload, isB2Configured } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { releaseReservation } from "@/lib/storage-quota-reservations";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -35,6 +36,7 @@ async function handleAbort(request: Request) {
     );
   }
 
+  let uid: string | null = null;
   if (!isDevAuthBypass()) {
     const authHeader = request.headers.get("Authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
@@ -42,35 +44,57 @@ async function handleAbort(request: Request) {
       return NextResponse.json({ error: "Missing or invalid Authorization" }, { status: 401 });
     }
     try {
-      await verifyIdToken(token);
+      const decoded = await verifyIdToken(token);
+      uid = decoded.uid;
     } catch {
       return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
     }
   }
 
-  const { session_id: sessionId, object_key: objectKey, upload_id: uploadId } = body;
+  const sessionId = body.session_id ?? body.sessionId;
+  const objectKey = body.object_key ?? body.objectKey;
+  const uploadId = body.upload_id ?? body.uploadId;
 
-  if (
-    !objectKey ||
-    typeof objectKey !== "string" ||
-    !uploadId ||
-    typeof uploadId !== "string"
-  ) {
+  if (!objectKey || typeof objectKey !== "string") {
+    return NextResponse.json({ error: "object_key is required" }, { status: 400 });
+  }
+
+  const db = getAdminFirestore();
+
+  if (uploadId && typeof uploadId === "string") {
+    try {
+      await abortMultipartUpload(objectKey, uploadId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to abort multipart upload";
+      console.error("[uploads/abort] B2 error:", message);
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  } else if (sessionId && typeof sessionId === "string") {
+    const sessionRef = db.collection("upload_sessions").doc(sessionId);
+    const sessionSnap = await sessionRef.get();
+    if (!sessionSnap.exists) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+    const data = sessionSnap.data()!;
+    if (uid && data.userId !== uid) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (data.objectKey !== objectKey) {
+      return NextResponse.json({ error: "object_key does not match session" }, { status: 400 });
+    }
+    if (data.upload_mode === "single_put") {
+      const rid = data.storage_quota_reservation_id;
+      if (typeof rid === "string" && rid.length > 0) {
+        await releaseReservation(rid, "client_abort").catch(() => {});
+      }
+    }
+  } else {
     return NextResponse.json(
-      { error: "object_key and upload_id are required" },
+      { error: "upload_id is required for multipart abort, or session_id for single-part abort" },
       { status: 400 }
     );
   }
 
-  try {
-    await abortMultipartUpload(objectKey, uploadId);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to abort multipart upload";
-    console.error("[uploads/abort] B2 error:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-
-  const db = getAdminFirestore();
   if (sessionId && typeof sessionId === "string") {
     const sessionRef = db.collection("upload_sessions").doc(sessionId);
     const sessionSnap = await sessionRef.get();

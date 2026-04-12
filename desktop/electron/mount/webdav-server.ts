@@ -13,9 +13,31 @@ import { desktopLog } from "../logger";
 
 const pipelineP = promisify(pipeline);
 
+/** Run async tasks over `items` with at most `concurrency` in flight (same pattern as web UploadManager). */
+async function runWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) break;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  const workers = Math.min(Math.max(1, concurrency), items.length);
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return results;
+}
+
 /** PUT bodies above this threshold are buffered to temp file first to avoid
  * "Controller is already closed" race when rclone/NLE disconnects mid-upload. */
 const LARGE_PUT_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50 MB
+/** Direct multipart to B2 via `/api/uploads/start-upload` (avoids single-PUT bottleneck). */
+const WEBDAV_MULTIPART_THRESHOLD_BYTES = 5 * 1024 * 1024; // align with server MULTIPART_THRESHOLD
 const API_FETCH_TIMEOUT_MS = 30000; // Production API can be slow (cold start, Firestore)
 const API_FETCH_RETRY_DELAY_MS = 1500;
 
@@ -510,6 +532,208 @@ export class WebDAVServer {
     }
   }
 
+  /**
+   * Large files: multipart session → parts to B2 → complete-upload → finalize-upload.
+   * Uses `apiBaseUrl` (set to upload control plane, e.g. https://upload.bizzicloud.io).
+   */
+  private async multipartWebdavUploadFromFile(
+    tmpPath: string,
+    sizeBytes: number,
+    driveId: string,
+    relativePath: string,
+    contentType: string,
+    token: string,
+    res: http.ServerResponse,
+    fileName: string
+  ): Promise<void> {
+    const base = this.options.apiBaseUrl.replace(/\/$/, "");
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+
+    const startRes = await fetch(`${base}/api/uploads/start-upload`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        drive_id: driveId,
+        relative_path: relativePath,
+        content_type: contentType,
+        size_bytes: sizeBytes,
+        file_name: fileName,
+        source: "desktop",
+        preferred_upload_mode: "auto",
+      }),
+    });
+    if (!startRes.ok) {
+      const err = await startRes.json().catch(() => ({}));
+      desktopLog.error("[WebDAV] start-upload error:", startRes.status, err);
+      res.writeHead(startRes.status === 503 ? 503 : 400);
+      res.end((err as { error?: string }).error ?? "start-upload failed");
+      return;
+    }
+
+    const start = (await startRes.json()) as {
+      sessionId?: string;
+      objectKey?: string;
+      uploadId?: string | null;
+      alreadyExists?: boolean;
+      recommendedPartSize?: number;
+      recommendedConcurrency?: number;
+      totalParts?: number;
+      parts?: { partNumber: number; uploadUrl: string }[];
+    };
+
+    if (start.alreadyExists && start.objectKey) {
+      const completeRes = await fetch(`${base}/api/mount/upload-complete`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          drive_id: driveId,
+          relative_path: relativePath,
+          object_key: start.objectKey,
+          size_bytes: sizeBytes,
+          content_type: contentType,
+        }),
+      });
+      if (!completeRes.ok) {
+        const err = await completeRes.json().catch(() => ({}));
+        res.writeHead(completeRes.status);
+        res.end((err as { error?: string }).error ?? "Failed to create file record");
+        return;
+      }
+      this.options.onUploadComplete?.(fileName);
+      res.writeHead(201);
+      res.end();
+      return;
+    }
+
+    if (!start.sessionId || !start.uploadId || !start.parts?.length || !start.objectKey) {
+      res.writeHead(500);
+      res.end("Invalid start-upload response");
+      return;
+    }
+
+    const sessionId = start.sessionId;
+    const objectKey = start.objectKey;
+    const uploadId = start.uploadId;
+    const totalParts = start.totalParts ?? 1;
+    const partSize = start.recommendedPartSize ?? 8 * 1024 * 1024;
+    const parallel = Math.min(
+      10,
+      Math.max(1, start.recommendedConcurrency ?? 6),
+      totalParts
+    );
+
+    const getPartUrl = async (partNumber: number): Promise<string> => {
+      const fromInitial = start.parts!.find((p) => p.partNumber === partNumber);
+      if (fromInitial?.uploadUrl) return fromInitial.uploadUrl;
+      const batchRes = await fetch(`${base}/api/uploads/parts/batch`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          session_id: sessionId,
+          object_key: objectKey,
+          upload_id: uploadId,
+          part_numbers: [partNumber],
+        }),
+      });
+      if (!batchRes.ok) throw new Error("parts/batch failed");
+      const b = (await batchRes.json()) as { parts: { partNumber: number; uploadUrl: string }[] };
+      const u = b.parts.find((p) => p.partNumber === partNumber)?.uploadUrl;
+      if (!u) throw new Error("missing part url");
+      return u;
+    };
+
+    const uploadOnePart = async (
+      partNumber: number
+    ): Promise<{ partNumber: number; etag: string }> => {
+      const startOff = (partNumber - 1) * partSize;
+      const len = Math.min(partSize, sizeBytes - startOff);
+      const buf = Buffer.alloc(len);
+      const fh = await fs.promises.open(tmpPath, "r");
+      try {
+        await fh.read(buf, 0, len, startOff);
+      } finally {
+        await fh.close();
+      }
+      const partUrl = await getPartUrl(partNumber);
+      const putRes = await fetch(partUrl, {
+        method: "PUT",
+        headers: { "Content-Type": contentType },
+        body: buf,
+      });
+      if (!putRes.ok) {
+        desktopLog.error("[WebDAV] part upload failed:", partNumber, putRes.status);
+        throw new Error(`part ${partNumber} upload failed`);
+      }
+      const etag = (putRes.headers.get("etag") ?? putRes.headers.get("ETag") ?? "").replace(
+        /^"|"$/g,
+        ""
+      );
+      if (!etag) throw new Error("missing etag");
+      return { partNumber, etag };
+    };
+
+    const partNumbers = Array.from({ length: totalParts }, (_, i) => i + 1);
+    let partResults: { partNumber: number; etag: string }[];
+    try {
+      partResults = await runWithConcurrency(partNumbers, parallel, (pn) => uploadOnePart(pn));
+    } catch (err) {
+      desktopLog.error("[WebDAV] multipart upload error:", err);
+      res.writeHead(502);
+      res.end(err instanceof Error ? err.message : "Multipart upload failed");
+      return;
+    }
+    partResults.sort((a, b) => a.partNumber - b.partNumber);
+
+    const complRes = await fetch(`${base}/api/uploads/complete-upload`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        session_id: sessionId,
+        object_key: objectKey,
+        upload_id: uploadId,
+        parts: partResults,
+        drive_id: driveId,
+        relative_path: relativePath,
+        content_type: contentType,
+        size_bytes: sizeBytes,
+        modified_at: new Date().toISOString(),
+      }),
+    });
+    if (!complRes.ok) {
+      const err = await complRes.json().catch(() => ({}));
+      desktopLog.error("[WebDAV] complete-upload error:", complRes.status, err);
+      res.writeHead(complRes.status);
+      res.end((err as { error?: string }).error ?? "complete-upload failed");
+      return;
+    }
+
+    const finRes = await fetch(`${base}/api/uploads/finalize-upload`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        session_id: sessionId,
+        drive_id: driveId,
+        relative_path: relativePath,
+        size_bytes: sizeBytes,
+        content_type: contentType,
+      }),
+    });
+    if (!finRes.ok) {
+      const err = await finRes.json().catch(() => ({}));
+      desktopLog.error("[WebDAV] finalize-upload error:", finRes.status, err);
+      res.writeHead(finRes.status);
+      res.end((err as { error?: string }).error ?? "finalize-upload failed");
+      return;
+    }
+
+    this.options.onUploadComplete?.(fileName);
+    res.writeHead(201);
+    res.end();
+  }
+
   private async handlePut(
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -537,6 +761,29 @@ export class WebDAVServer {
     }
 
     try {
+      if (sizeBytes >= WEBDAV_MULTIPART_THRESHOLD_BYTES && sizeBytes > 0) {
+        const tmpPath = join(
+          tmpdir(),
+          `webdav-mp-${Date.now()}-${Math.random().toString(36).slice(2)}`
+        );
+        await pipelineP(req, fs.createWriteStream(tmpPath));
+        try {
+          await this.multipartWebdavUploadFromFile(
+            tmpPath,
+            sizeBytes,
+            driveId,
+            relativePath,
+            contentType,
+            token,
+            res,
+            fileName
+          );
+        } finally {
+          fs.unlink(tmpPath, () => {});
+        }
+        return;
+      }
+
       // 1. Get presigned upload URL
       const urlRes = await fetch(`${this.options.apiBaseUrl}/api/backup/upload-url`, {
         method: "POST",

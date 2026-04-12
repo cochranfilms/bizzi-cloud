@@ -1,9 +1,11 @@
 /**
  * Upload manager: direct-to-B2 multipart uploads with resumability, dedupe, and adaptive concurrency.
  * File bytes never pass through Vercel; client uploads directly to Backblaze B2.
+ * Control-plane calls use `getUploadApiBaseUrl()` (NEXT_PUBLIC_UPLOAD_API_BASE_URL) when set.
  */
 
 import type { UploadCreateResponse, FileFingerprint } from "@/types/upload";
+import { getUploadApiBaseUrl } from "@/lib/upload-api-base";
 
 const SAMPLE_SIZE = 64 * 1024;
 
@@ -209,7 +211,7 @@ export class UploadManager {
   }
 
   private getBaseUrl(): string {
-    return this.opts.getBaseUrl?.() ?? (typeof window !== "undefined" ? window.location.origin : "");
+    return this.opts.getBaseUrl?.() ?? getUploadApiBaseUrl();
   }
 
   private async apiFetch(path: string, init: Omit<RequestInit, "body"> & { body?: Record<string, unknown> }) {
@@ -355,16 +357,21 @@ export class UploadManager {
       }
 
       if (file.size < MULTIPART_THRESHOLD) {
-        const urlRes = await this.apiFetch("/api/backup/upload-url", {
+        const urlRes = await this.apiFetch("/api/uploads/start-upload", {
           method: "POST",
           body: {
-          drive_id: driveId,
-          relative_path: relativePath,
-          content_type: contentType,
-          content_hash: null,
-          user_id: this.opts.getUserId?.() ?? undefined,
-          size_bytes: file.size,
-        },
+            drive_id: driveId,
+            relative_path: relativePath,
+            content_type: contentType,
+            content_hash: null,
+            user_id: this.opts.getUserId?.() ?? undefined,
+            size_bytes: file.size,
+            file_name: file.name,
+            last_modified: file.lastModified,
+            workspace_id: workspaceId ?? null,
+            source: "web",
+            preferred_upload_mode: "single_put",
+          },
         });
         if (!urlRes.ok) {
           const data = await urlRes.json().catch(() => ({}));
@@ -372,6 +379,7 @@ export class UploadManager {
         }
         const urlData = (await urlRes.json()) as {
           uploadUrl?: string;
+          putUrl?: string;
           objectKey: string;
           alreadyExists?: boolean;
         };
@@ -380,8 +388,9 @@ export class UploadManager {
           await this.invokeOnComplete({ fileId, objectKey: urlData.objectKey });
           return { objectKey: urlData.objectKey };
         }
-        if (!urlData.uploadUrl) throw new Error("No upload URL");
-        await putWithProgress(file, urlData.uploadUrl, contentType, {
+        const putTarget = urlData.uploadUrl ?? urlData.putUrl;
+        if (!putTarget) throw new Error("No upload URL");
+        await putWithProgress(file, putTarget, contentType, {
           signal: controller.signal,
           sseRequired: true,
           onProgress: (loaded) =>
@@ -394,7 +403,7 @@ export class UploadManager {
 
       const contentHash =
         file.size > CONTENT_HASH_SKIP_THRESHOLD ? null : await this.sha256Hex(file);
-      const createRes = await this.apiFetch("/api/uploads/create", {
+      const createRes = await this.apiFetch("/api/uploads/start-upload", {
         method: "POST",
         body: {
           drive_id: driveId,
@@ -406,6 +415,8 @@ export class UploadManager {
           file_name: file.name,
           last_modified: file.lastModified,
           workspace_id: workspaceId ?? null,
+          source: "web",
+          preferred_upload_mode: "auto",
           user_id: this.opts.getUserId?.() ?? undefined,
         },
       });
@@ -502,7 +513,7 @@ export class UploadManager {
         }
       );
 
-      const completeRes = await this.apiFetch("/api/uploads/complete", {
+      const completeRes = await this.apiFetch("/api/uploads/complete-upload", {
         method: "POST",
         body: {
           session_id: create.sessionId,

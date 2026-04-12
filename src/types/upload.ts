@@ -33,12 +33,19 @@ export interface UploadSession {
 
 export interface UploadCreateResponse {
   sessionId: string | null;
+  /** Present when using POST /api/uploads/start-upload */
+  uploadMode?: "single_put" | "multipart";
   objectKey: string;
   uploadId: string | null;
   recommendedPartSize: number;
   recommendedConcurrency: number;
   totalParts: number;
   parts: { partNumber: number; uploadUrl: string }[];
+  /** Single-part presigned PUT (single_put mode). */
+  putUrl?: string;
+  uploadUrl?: string;
+  requiredHeaders?: Record<string, string>;
+  expiresAt?: string;
   alreadyExists?: boolean;
   existingObjectKey?: string;
   /** Pending quota reservation; commit released in uploads/complete after verify. */

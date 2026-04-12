@@ -23,6 +23,7 @@ import {
   revokeUppyPreview,
 } from "@/lib/uppy-local-preview";
 import { runChunkedIngest } from "@/lib/uppy-chunked-ingest";
+import { getUploadApiBaseUrl } from "@/lib/upload-api-base";
 import {
   getAggregateProgressThrottleMs,
   getBatchTierFromCount,
@@ -414,7 +415,8 @@ export default function UppyUploadModal({
 
     const awsS3Opts = {
       id: "AwsS3",
-      endpoint: typeof window !== "undefined" ? `${window.location.origin}/api/uppy` : "",
+      endpoint:
+        typeof window !== "undefined" ? `${getUploadApiBaseUrl()}/api/uppy` : "",
       headers: {} as Record<string, string>,
       /** Lower than default 6 to reduce concurrent B2/S3 sockets during huge .fcpbundle uploads */
       limit: 3,
@@ -732,7 +734,7 @@ export default function UppyUploadModal({
                 return;
               }
               const res = await fetch(
-                `${typeof window !== "undefined" ? window.location.origin : ""}/api/uppy/presigned-complete`,
+                `${typeof window !== "undefined" ? getUploadApiBaseUrl() : ""}/api/uppy/presigned-complete`,
                 {
                   method: "POST",
                   headers: {

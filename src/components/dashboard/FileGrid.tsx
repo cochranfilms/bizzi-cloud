@@ -1264,6 +1264,13 @@ export default function FileGrid({
   );
 
   useEffect(() => {
+    workspaceQuickActionsRegistry.setWorkspaceBackgroundContextMenuHandler(
+      handleWorkspaceBackgroundContextMenu,
+    );
+    return () => workspaceQuickActionsRegistry.setWorkspaceBackgroundContextMenuHandler(null);
+  }, [handleWorkspaceBackgroundContextMenu]);
+
+  useEffect(() => {
     if (!workspaceContextMenu) return;
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") setWorkspaceContextMenu(null);
@@ -2592,7 +2599,6 @@ export default function FileGrid({
         }
         data-scroll-container={embeddedHomeStorage ? undefined : true}
         data-view-type={currentDrive ? "folder" : "all-files"}
-        onContextMenu={handleWorkspaceBackgroundContextMenu}
       >
       <FilesViewWrapper>
       {currentDrive &&

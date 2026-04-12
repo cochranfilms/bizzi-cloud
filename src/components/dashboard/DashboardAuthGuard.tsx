@@ -90,13 +90,22 @@ export default function DashboardAuthGuard({
               placeholderClassName={fadePlaceholder}
             />
           )}
-          {ready ? children : null}
+          {ready ? (
+            shellInner ? (
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+            ) : (
+              children
+            )
+          ) : null}
         </>
       ) : (
         <DashboardRouteFade
           ready={ready}
           srOnlyMessage="Loading dashboard"
           placeholderClassName={fadePlaceholder}
+          readyContentClassName={
+            shellInner ? "flex min-h-0 min-w-0 flex-1 flex-col" : ""
+          }
         >
           {ready ? children : null}
         </DashboardRouteFade>

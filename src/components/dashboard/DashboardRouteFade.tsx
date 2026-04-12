@@ -38,6 +38,11 @@ export type DashboardRouteFadeProps = {
   compact?: boolean;
   /** Extra classes merged onto the placeholder (overrides compact size when needed). */
   placeholderClassName?: string;
+  /**
+   * Classes merged onto the ready-state inner wrapper (with opacity transition).
+   * Use inside fixed-height shells so scroll works: e.g. `flex min-h-0 flex-1 flex-col`.
+   */
+  readyContentClassName?: string;
 };
 
 export type DashboardLoadingPlaceholderProps = Pick<
@@ -75,6 +80,7 @@ export default function DashboardRouteFade({
   srOnlyMessage = "Loading page content",
   compact = false,
   placeholderClassName = "",
+  readyContentClassName = "",
 }: DashboardRouteFadeProps) {
   const [entered, setEntered] = useState(false);
 
@@ -109,7 +115,7 @@ export default function DashboardRouteFade({
         <div
           className={`transition-opacity duration-[850ms] ease-out motion-reduce:transition-none ${
             entered ? "opacity-100" : "opacity-0"
-          }`}
+          } ${readyContentClassName}`.trim()}
         >
           {children}
         </div>
