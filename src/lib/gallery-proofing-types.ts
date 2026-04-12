@@ -33,9 +33,15 @@ export const PROOFING_ROOT_SELECTS = CANONICAL_VIDEO_PROOFING_FOLDER;
 export type ProofingRootSegment = typeof PROOFING_ROOT_FAVORITES | typeof PROOFING_ROOT_SELECTS;
 
 export function proofingRootSegmentFromGalleryType(
-  galleryType: "photo" | "video" | undefined | null
+  galleryType: "photo" | "video" | "mixed" | undefined | null
 ): ProofingRootSegment {
   const k = galleryType === "video" ? "video" : "photo";
+  return canonicalProofingRootSegment(k) as ProofingRootSegment;
+}
+
+/** Proofing storage root follows list type (required for mixed galleries). */
+export function proofingRootSegmentFromListType(listType: ProofingListType): ProofingRootSegment {
+  const k = listType === "video_selects" ? "video" : "photo";
   return canonicalProofingRootSegment(k) as ProofingRootSegment;
 }
 

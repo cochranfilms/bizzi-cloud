@@ -43,7 +43,7 @@ export async function POST(
     return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
   }
   const g = gallerySnap.data()!;
-  if (g.gallery_type !== "video") {
+  if (g.gallery_type !== "video" && g.gallery_type !== "mixed") {
     return NextResponse.json(
       { error: "Use POST /api/galleries/{id}/favorites/{listId}/materialize for photo galleries" },
       { status: 400 }

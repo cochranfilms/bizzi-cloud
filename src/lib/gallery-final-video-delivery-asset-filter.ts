@@ -18,7 +18,7 @@ export function shouldOmitAssetFromFinalVideoDeliveryListing(
   gallery: GalleryRowForFinalVideoFilter,
   backupRelativePath: string | null | undefined
 ): boolean {
-  if (gallery.gallery_type !== "video") return false;
+  if (gallery.gallery_type !== "video" && gallery.gallery_type !== "mixed") return false;
   const mode = normalizeGalleryMediaMode({
     media_mode: gallery.media_mode as string | null | undefined,
     source_format: gallery.source_format as string | null | undefined,

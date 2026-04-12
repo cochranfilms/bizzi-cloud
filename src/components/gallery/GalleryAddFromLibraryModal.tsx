@@ -219,6 +219,8 @@ export interface GalleryAddFromLibraryModalProps {
   open: boolean;
   onClose: () => void;
   isVideoGallery: boolean;
+  /** When true, allow both gallery images and videos in the picker (mixed final-delivery galleries). */
+  isMixedGallery?: boolean;
   /** When true, show the RAW linked drive in the picker (RAW video galleries only). */
   showRawDrive: boolean;
   isTeamRoute: boolean;
@@ -233,6 +235,7 @@ export default function GalleryAddFromLibraryModal({
   open,
   onClose,
   isVideoGallery,
+  isMixedGallery = false,
   showRawDrive,
   isTeamRoute,
   selectedIds,
@@ -261,6 +264,14 @@ export default function GalleryAddFromLibraryModal({
     (f: RecentFile) => {
       if (f.driveName === "Gallery Media" || teamAwareLabel(f.driveName) === "Gallery Media")
         return false;
+      if (isMixedGallery) {
+        if (isGalleryVideo(f.name)) {
+          if (f.contentType?.startsWith("image/")) return false;
+          return true;
+        }
+        if (isGalleryImage(f.name) && !isGalleryVideo(f.name)) return true;
+        return false;
+      }
       if (isVideoGallery) {
         if (!isGalleryVideo(f.name)) return false;
         if (f.contentType?.startsWith("image/")) return false;
@@ -270,7 +281,7 @@ export default function GalleryAddFromLibraryModal({
       if (f.contentType?.startsWith("video/")) return false;
       return true;
     },
-    [isVideoGallery]
+    [isVideoGallery, isMixedGallery]
   );
 
   const pickerDrives = useMemo(() => {

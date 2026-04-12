@@ -49,8 +49,10 @@ export function clientMayDownloadGalleryFiles(
   gallery: GalleryPolicyLike | null | undefined
 ): boolean {
   if (!gallery) return false;
-  const isVideo = gallery.gallery_type === "video";
-  const videoOk = !isVideo || videoGalleryAllowsClientFileDownloads(gallery.download_policy);
+  const usesVideoDownloadPolicy =
+    gallery.gallery_type === "video" || gallery.gallery_type === "mixed";
+  const videoOk =
+    !usesVideoDownloadPolicy || videoGalleryAllowsClientFileDownloads(gallery.download_policy);
   return videoOk && !clientInvoiceBlocksDownload(gallery);
 }
 
@@ -88,7 +90,7 @@ export function getVideoExperienceSummaryLines(gallery: GalleryPolicyLike | null
   lines: string[];
   mediaModeLabel: string;
 } {
-  if (!gallery || gallery.gallery_type !== "video") {
+  if (!gallery || (gallery.gallery_type !== "video" && gallery.gallery_type !== "mixed")) {
     return { lines: [], mediaModeLabel: "" };
   }
   const mediaMode = normalizeGalleryMediaMode({
@@ -115,7 +117,7 @@ export function getVideoExperienceSummaryLines(gallery: GalleryPolicyLike | null
 export function buildVideoGalleryCapabilityPills(
   gallery: GalleryPolicyLike | null | undefined
 ): string[] {
-  if (!gallery || gallery.gallery_type !== "video") return [];
+  if (!gallery || (gallery.gallery_type !== "video" && gallery.gallery_type !== "mixed")) return [];
 
   const pills: string[] = [];
   const mediaMode = normalizeGalleryMediaMode({
@@ -123,6 +125,7 @@ export function buildVideoGalleryCapabilityPills(
     source_format: gallery.source_format ?? null,
   });
   if (mediaMode === "raw") pills.push("RAW");
+  if (gallery.gallery_type === "mixed") pills.push("Photos + videos");
 
   if (clientInvoiceBlocksDownload(gallery)) {
     pills.push("Downloads locked until payment");

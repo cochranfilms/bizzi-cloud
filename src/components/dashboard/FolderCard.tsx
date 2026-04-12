@@ -4,8 +4,9 @@ import type { LucideIcon } from "lucide-react";
 import type { CardSize, AspectRatio } from "@/context/LayoutSettingsContext";
 import type { CardPresentation } from "@/lib/card-presentation";
 import { getCardAspectClass } from "@/lib/card-aspect-utils";
-import { Check, Cloud, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
+import { Cloud, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { useDelayedSelectOrOpen } from "@/hooks/useDelayedSelectOrOpen";
 import { usePathname } from "next/navigation";
 import { DND_MOVE_MIME, type FolderDropMoveTarget } from "@/lib/dnd-move-items";
 import ShareModal from "./ShareModal";
@@ -110,11 +111,11 @@ interface FolderCardProps {
   topBadge?: string;
 }
 
-// Scaled so largest never exceeds former medium; large = former medium
+// ~8% larger than prior sizes for clearer folder tiles
 const SIZE_CLASSES = {
-  small: { padding: "p-3", icon: "h-11 w-11", iconInner: "h-6 w-6", text: "text-xs" },
-  medium: { padding: "p-4", icon: "h-14 w-14", iconInner: "h-7 w-7", text: "text-xs" },
-  large: { padding: "p-6", icon: "h-20 w-20", iconInner: "h-10 w-10", text: "text-sm" },
+  small: { padding: "p-3.5", icon: "h-12 w-12", iconInner: "h-6 w-6", text: "text-xs" },
+  medium: { padding: "p-[1.1rem]", icon: "h-[3.75rem] w-[3.75rem]", iconInner: "h-8 w-8", text: "text-xs" },
+  large: { padding: "p-[1.62rem]", icon: "h-[5.25rem] w-[5.25rem]", iconInner: "h-11 w-11", text: "text-sm" },
 } as const;
 
 export default function FolderCard({
@@ -296,8 +297,8 @@ export default function FolderCard({
   const systemMobileShell = isSystemFolder
     ? "max-sm:min-h-0 max-sm:flex-row max-sm:items-center max-sm:justify-start max-sm:gap-0 max-sm:py-3 max-sm:pl-3 max-sm:pr-[3.5rem] max-sm:!p-3"
     : "";
-  const iconBoxClass = `${sizeClasses.icon} max-sm:!h-16 max-sm:!w-16`;
-  const iconInnerClass = `${sizeClasses.iconInner} max-sm:!h-8 max-sm:!w-8`;
+  const iconBoxClass = `${sizeClasses.icon} max-sm:!h-[4.35rem] max-sm:!w-[4.35rem]`;
+  const iconInnerClass = `${sizeClasses.iconInner} max-sm:!h-[2.15rem] max-sm:!w-[2.15rem]`;
 
   const defaultGridShell = `group touch-manipulation relative flex min-w-0 w-full max-w-full flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors ${revealOpacityClass} ${sizeClasses.padding} ${aspectShell} ${systemMobileShell} ${
     defaultGridFullBleedCover ? "h-full min-h-0" : ""
@@ -344,64 +345,35 @@ export default function FolderCard({
 
   const itemCountLine = `${item.items} ${item.items === 1 ? "item" : "items"}`;
 
+  const shellInteractive = canNavigate || !!(selectable && onSelect);
+  const { onPointerAreaClick, onPointerAreaDoubleClick, onCardKeyDown } = useDelayedSelectOrOpen({
+    selectable: !!(selectable && onSelect),
+    onSelect,
+    onOpen: canNavigate ? onClick : undefined,
+  });
+
   return (
     <>
       <div
         className={useThumbChrome ? thumbBrowseShell : defaultGridShell}
-        role={canNavigate ? "button" : undefined}
-        tabIndex={canNavigate ? 0 : undefined}
+        role={shellInteractive ? "button" : undefined}
+        tabIndex={shellInteractive ? 0 : undefined}
         aria-label={canNavigate && useThumbChrome && !showCardInfo ? item.name : undefined}
         title={useThumbChrome && !showCardInfo ? item.name : undefined}
-        onClick={canNavigate ? onClick : undefined}
-        onKeyDown={
-          canNavigate
-            ? (e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onClick?.();
-                }
-              }
-            : undefined
-        }
+        onClick={shellInteractive ? onPointerAreaClick : undefined}
+        onDoubleClick={selectable && onSelect ? onPointerAreaDoubleClick : undefined}
+        onKeyDown={shellInteractive ? onCardKeyDown : undefined}
         onDragOver={isDropTarget ? handleDragOver : undefined}
         onDragLeave={isDropTarget ? handleDragLeave : undefined}
         onDrop={isDropTarget ? handleDrop : undefined}
       >
         {topBadge ? (
           <span
-            className={`pointer-events-none absolute left-2 z-[21] rounded-md bg-[var(--enterprise-primary)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm ring-1 ring-black/10 dark:ring-white/20 ${
-              selectable && onSelect ? "top-9" : "top-2"
-            }`}
+            className="pointer-events-none absolute left-2 top-2 z-[21] rounded-md bg-[var(--enterprise-primary)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm ring-1 ring-black/10 dark:ring-white/20"
           >
             {topBadge}
           </span>
         ) : null}
-        {selectable && onSelect && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect();
-            }}
-            className={`absolute left-2 top-2 z-20 flex items-center justify-center rounded-md border-2 transition-colors ${
-              useThumbChrome
-                ? "h-5 w-5 border-white/60 bg-black/40 backdrop-blur-sm hover:bg-black/55 dark:border-white/50"
-                : "z-10 h-6 w-6 hover:bg-neutral-100 dark:hover:bg-neutral-700"
-            } ${
-              selected
-                ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-blue dark:bg-bizzi-blue"
-                : useThumbChrome
-                  ? "border-white/60 bg-black/35"
-                  : "border-neutral-300 bg-transparent dark:border-neutral-600"
-            }`}
-            aria-label={selected ? "Deselect" : "Select"}
-            aria-pressed={selected}
-          >
-            {selected && (
-              <Check className={`${useThumbChrome ? "h-3 w-3" : "h-3.5 w-3.5"} text-white stroke-[3]`} />
-            )}
-          </button>
-        )}
         {useThumbChrome ? (
           <>
             {isTransfersRoot ? (

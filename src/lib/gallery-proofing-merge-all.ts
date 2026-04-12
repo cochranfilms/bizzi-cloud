@@ -76,8 +76,10 @@ export type MergeAllOk = {
 
 export type MergeAllErr = { ok: false; error: string; status: number };
 
-function galleryKind(g: Record<string, unknown>): "photo" | "video" {
-  return g.gallery_type === "video" ? "video" : "photo";
+function galleryKind(g: Record<string, unknown>): "photo" | "video" | "mixed" {
+  if (g.gallery_type === "video") return "video";
+  if (g.gallery_type === "mixed") return "mixed";
+  return "photo";
 }
 
 export async function mergeAllProofingLists(params: {
@@ -120,9 +122,10 @@ export async function mergeAllProofingLists(params: {
     { ...galleryRow, id: galleryId } as Record<string, unknown>,
     galleryId
   );
+  const mergePathKind: "photo" | "video" = gKind === "mixed" ? "photo" : gKind;
   const merge_relative_prefix = buildMergeRelativePrefix({
     mediaFolderSegment: mediaFolder,
-    galleryKind: gKind,
+    galleryKind: mergePathKind,
     mergeSlug: merge_slug,
     mergedSegment: PROOFING_MERGED_SEGMENT,
   });
@@ -136,7 +139,7 @@ export async function mergeAllProofingLists(params: {
   const now = new Date();
   await mergeRef.set({
     merge_slug,
-    proofing_root_segment: canonicalProofingRootSegment(gKind),
+    proofing_root_segment: canonicalProofingRootSegment(mergePathKind),
     merge_relative_prefix,
     merged_at: null,
     merged_by_uid: actingUid,
@@ -165,13 +168,15 @@ export async function mergeAllProofingLists(params: {
       continue;
     }
     const mt = ad.media_type as string | undefined;
-    if (gKind === "photo" && mt !== "image") {
-      skippedIds.push(aid);
-      continue;
-    }
-    if (gKind === "video" && mt !== "video") {
-      skippedIds.push(aid);
-      continue;
+    if (gKind !== "mixed") {
+      if (gKind === "photo" && mt !== "image") {
+        skippedIds.push(aid);
+        continue;
+      }
+      if (gKind === "video" && mt !== "video") {
+        skippedIds.push(aid);
+        continue;
+      }
     }
     const name = (ad.name as string) ?? "download";
     const ok = ad.object_key as string | undefined;

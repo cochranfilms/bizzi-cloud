@@ -10,6 +10,7 @@ import {
   Loader2,
   Download,
   Film,
+  Images,
   ExternalLink,
   FolderOpen,
   Merge,
@@ -44,6 +45,8 @@ interface ProofingListRow {
   client_name: string | null;
   asset_ids: string[];
   created_at: string | null;
+  /** Drives materialize route: `favorites` vs `selects` (mixed galleries have both). */
+  list_type?: "photo_favorites" | "video_selects" | string | null;
   materialization_state?: string;
   materialized_linked_drive_id?: string | null;
   materialized_relative_prefix?: string | null;
@@ -109,6 +112,16 @@ function sortCommentsDesc(a: Comment, b: Comment): number {
   return tb - ta;
 }
 
+function materializeApiSegmentForList(list: ProofingListRow): "selects" | "favorites" {
+  return list.list_type === "video_selects" ? "selects" : "favorites";
+}
+
+function sortProofingListsDesc(a: ProofingListRow, b: ProofingListRow): number {
+  const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+  const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+  return tb - ta;
+}
+
 export type GalleryProofingWorkspaceProps = {
   galleryId: string;
   /** e.g. `/dashboard/galleries/x` or `/enterprise/galleries/x` */
@@ -159,7 +172,9 @@ export default function GalleryProofingWorkspace({
     [galleryId, lutMirrorGallery]
   );
 
-  const isVideo = policyGallery?.gallery_type === "video";
+  const isStrictVideoGallery = policyGallery?.gallery_type === "video";
+  const isMixedGallery = policyGallery?.gallery_type === "mixed";
+  const isVideoLayoutGallery = isStrictVideoGallery || isMixedGallery;
   const mediaMode = normalizeGalleryMediaMode({
     media_mode: (policyGallery?.media_mode as string) ?? null,
     source_format: policyGallery?.source_format ?? null,
@@ -186,11 +201,19 @@ export default function GalleryProofingWorkspace({
       }
 
       const viewData = await viewRes.json();
-      const isVid = viewData.gallery?.gallery_type === "video";
-      const listsPath = isVid ? "selects" : "favorites";
+      const gt = viewData.gallery?.gallery_type as string | undefined;
+      const isVid = gt === "video";
+      const isMixed = gt === "mixed";
 
-      const [listsRes, commentsRes] = await Promise.all([
-        fetch(`/api/galleries/${galleryId}/${listsPath}`, { headers }),
+      const listFetches = isMixed
+        ? [
+            fetch(`/api/galleries/${galleryId}/favorites`, { headers }),
+            fetch(`/api/galleries/${galleryId}/selects`, { headers }),
+          ]
+        : [fetch(`/api/galleries/${galleryId}/${isVid ? "selects" : "favorites"}`, { headers })];
+
+      const [listResponses, commentsRes] = await Promise.all([
+        Promise.all(listFetches),
         fetch(`/api/galleries/${galleryId}/comments`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
@@ -201,12 +224,15 @@ export default function GalleryProofingWorkspace({
       setLutMirrorGallery(viewData.gallery ?? null);
       setPolicyGallery((viewData.gallery ?? null) as GalleryPolicyLike);
 
-      if (listsRes.ok) {
-        const listsData = await listsRes.json();
-        setFavorites(listsData.lists ?? []);
-      } else {
-        setFavorites([]);
+      const mergedById = new Map<string, ProofingListRow>();
+      for (const lr of listResponses) {
+        if (!lr.ok) continue;
+        const listsData = (await lr.json()) as { lists?: ProofingListRow[] };
+        for (const row of listsData.lists ?? []) {
+          mergedById.set(row.id, row);
+        }
       }
+      setFavorites([...mergedById.values()].sort(sortProofingListsDesc));
 
       if (commentsRes.ok) {
         const commentsData = await commentsRes.json();
@@ -262,16 +288,14 @@ export default function GalleryProofingWorkspace({
   const [proofingActionError, setProofingActionError] = useState<string | null>(null);
   const [proofingActionSuccess, setProofingActionSuccess] = useState<string | null>(null);
 
-  const unit = isVideo ? "clip" : "photo";
-  const units = isVideo ? "clips" : "photos";
+  const unit = isStrictVideoGallery ? "clip" : isMixedGallery ? "item" : "photo";
+  const units = isStrictVideoGallery ? "clips" : isMixedGallery ? "items" : "photos";
 
   const handleDownloadFavorites = () => {
     if (!policyFavorites || !policyDownloads) return;
     if (favoritedDownloadItems.length === 0) return;
     downloadFavorites(favoritedDownloadItems, "selected");
   };
-
-  const proofingListsApiSegment = isVideo ? "selects" : "favorites";
 
   const openMaterializedFolder = useCallback(
     (list: ProofingListRow) => {
@@ -288,13 +312,14 @@ export default function GalleryProofingWorkspace({
     [filesHref, router, setCurrentDrivePath, setCurrentFolderDriveId]
   );
 
-  const handleMaterializeList = async (listId: string) => {
+   const handleMaterializeList = async (listId: string) => {
     if (!user || !policyFavorites) return;
     const list = favorites.find((x) => x.id === listId);
+    const segment = list ? materializeApiSegmentForList(list) : "favorites";
     if (list && proofingListFolderAlreadyUpToDate(list)) {
       setProofingActionError(null);
       setProofingActionSuccess(
-        isVideo
+        segment === "selects"
           ? "This selects folder is already created in Gallery Media. Use Open folder to view it."
           : "This favorites folder is already created in Gallery Media. Use Open folder to view it."
       );
@@ -307,7 +332,7 @@ export default function GalleryProofingWorkspace({
     try {
       const token = await user.getIdToken();
       const res = await fetch(
-        `/api/galleries/${galleryId}/${proofingListsApiSegment}/${listId}/materialize`,
+        `/api/galleries/${galleryId}/${segment}/${listId}/materialize`,
         {
           method: "POST",
           headers: {
@@ -325,7 +350,7 @@ export default function GalleryProofingWorkspace({
       bumpStorageVersion();
       await fetchData();
       setProofingActionSuccess(
-        isVideo
+        segment === "selects"
           ? "Selects folder updated in Gallery Media. Use Open folder to open this list’s folder."
           : "Favorites folder updated in Gallery Media. Use Open folder to open this list’s folder."
       );
@@ -389,13 +414,47 @@ export default function GalleryProofingWorkspace({
       ? typeFilteredAssets.filter((a) => selectedListAssetIds.has(a.id))
       : typeFilteredAssets;
 
-  const filterLabels: Record<typeof filter, string> = isVideo
+  const filterLabels: Record<typeof filter, string> = isStrictVideoGallery
     ? { all: "All clips", favorited: "In selects", commented: "Commented" }
-    : { all: "All", favorited: "Favorited", commented: "Commented" };
+    : isMixedGallery
+      ? {
+          all: "All media",
+          favorited: "Favorited or selected",
+          commented: "Commented",
+        }
+      : { all: "All", favorited: "Favorited", commented: "Commented" };
 
   const workflowChip = policyGallery?.workflow_status
     ? String(policyGallery.workflow_status).replace(/_/g, " ")
     : null;
+
+  const downloadFavoritesLabel = isStrictVideoGallery
+    ? "Download favorited clips"
+    : isMixedGallery
+      ? "Download favorited items"
+      : "Download favorited photos";
+  const mergeAllLabel = isStrictVideoGallery
+    ? "Merge all selects"
+    : isMixedGallery
+      ? "Merge all proofing lists"
+      : "Merge all favorites";
+  const proofingListsPanelTitle = isMixedGallery
+    ? "Favorites & selects lists"
+    : isStrictVideoGallery
+      ? "Selects lists"
+      : "Favorites lists";
+  const proofingListsEmptyMessage = isMixedGallery
+    ? "No favorites or selects submitted yet."
+    : isStrictVideoGallery
+      ? "No selects submitted yet."
+      : "No favorites submitted yet.";
+  const mediaTableTitle = isMixedGallery ? "Media" : isStrictVideoGallery ? "Clips" : "Assets";
+  const mediaColumnLabel = isMixedGallery ? "Asset" : isStrictVideoGallery ? "Clip" : "Asset";
+  const favoritedColumnLabel = isMixedGallery
+    ? "Favorited / selected"
+    : isStrictVideoGallery
+      ? "Selected"
+      : "Favorited";
 
   return (
     <>
@@ -411,11 +470,15 @@ export default function GalleryProofingWorkspace({
               Back to {galleryTitle}
             </Link>
 
-            {isVideo && (
+            {isVideoLayoutGallery && (
               <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
                 <span className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-100 px-2.5 py-1 font-medium dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-                  <Film className="h-3.5 w-3.5" />
-                  Video
+                  {isMixedGallery ? (
+                    <Images className="h-3.5 w-3.5" />
+                  ) : (
+                    <Film className="h-3.5 w-3.5" />
+                  )}
+                  {isMixedGallery ? "Photos + video" : "Video"}
                 </span>
                 <span className="rounded-full border border-neutral-200 px-2.5 py-1 dark:border-neutral-600">
                   {mediaMode === "raw" ? "RAW" : "Final"}
@@ -428,15 +491,24 @@ export default function GalleryProofingWorkspace({
               </div>
             )}
 
-            {isVideo && videoSummary.lines.length > 0 && (
+            {isVideoLayoutGallery && videoSummary.lines.length > 0 && (
               <div className="rounded-lg border border-neutral-200 bg-neutral-50/80 px-4 py-3 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900/60 dark:text-neutral-300">
                 <p className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-500">
                   Review summary
                 </p>
                 <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
                   <li>
-                    {assets.length} clip{assets.length !== 1 ? "s" : ""} · {favoritedAssetIds.size}{" "}
-                    in selects · {commentedAssetIds.size} with comments
+                    {isMixedGallery ? (
+                      <>
+                        {assets.length} file{assets.length !== 1 ? "s" : ""} · {favoritedAssetIds.size}{" "}
+                        favorited or selected · {commentedAssetIds.size} with comments
+                      </>
+                    ) : (
+                      <>
+                        {assets.length} clip{assets.length !== 1 ? "s" : ""} · {favoritedAssetIds.size}{" "}
+                        in selects · {commentedAssetIds.size} with comments
+                      </>
+                    )}
                   </li>
                   {videoSummary.lines.map((line, i) => (
                     <li key={i}>{line}</li>
@@ -481,7 +553,7 @@ export default function GalleryProofingWorkspace({
                     ) : (
                       <>
                         <Download className="h-4 w-4" />
-                        {isVideo ? "Download favorited clips" : "Download favorited photos"}
+                        {downloadFavoritesLabel}
                       </>
                     )}
                   </button>
@@ -501,7 +573,7 @@ export default function GalleryProofingWorkspace({
                     ) : (
                       <>
                         <Merge className="h-4 w-4" />
-                        {isVideo ? "Merge all selects" : "Merge all favorites"}
+                        {mergeAllLabel}
                       </>
                     )}
                   </button>
@@ -533,11 +605,11 @@ export default function GalleryProofingWorkspace({
               <div className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
                 <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
                   <Heart className="h-5 w-5 text-red-500" />
-                  {isVideo ? "Selects lists" : "Favorites lists"} ({favorites.length})
+                  {proofingListsPanelTitle} ({favorites.length})
                 </h2>
                 {favorites.length === 0 ? (
                   <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                    {isVideo ? "No selects submitted yet." : "No favorites submitted yet."}
+                    {proofingListsEmptyMessage}
                   </p>
                 ) : (
                   <div className="space-y-3">
@@ -683,7 +755,7 @@ export default function GalleryProofingWorkspace({
             <div className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
               <div className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-700">
                 <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
-                  {isVideo ? "Clips" : "Assets"} ({filteredAssets.length})
+                  {mediaTableTitle} ({filteredAssets.length})
                 </h2>
               </div>
               <div className="overflow-x-auto">
@@ -691,25 +763,25 @@ export default function GalleryProofingWorkspace({
                   <thead>
                     <tr className="border-b border-neutral-200 dark:border-neutral-700">
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">
-                        {isVideo ? "Clip" : "Asset"}
+                        {mediaColumnLabel}
                       </th>
-                      {isVideo ? (
+                      {isVideoLayoutGallery ? (
                         <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">
                           Duration
                         </th>
                       ) : null}
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">
-                        {isVideo ? "Selected" : "Favorited"}
+                        {favoritedColumnLabel}
                       </th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">
                         Comments
                       </th>
-                      {isVideo ? (
+                      {isVideoLayoutGallery ? (
                         <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">
                           Latest
                         </th>
                       ) : null}
-                      {isVideo ? (
+                      {isVideoLayoutGallery ? (
                         <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">
                           Open
                         </th>
@@ -718,7 +790,7 @@ export default function GalleryProofingWorkspace({
                   </thead>
                   <tbody>
                     {filteredAssets.map((a) => {
-                      const latestComment: Comment | undefined = isVideo
+                      const latestComment: Comment | undefined = isVideoLayoutGallery
                         ? [...comments]
                             .filter((c) => c.asset_id === a.id)
                             .sort(sortCommentsDesc)[0]
@@ -729,7 +801,7 @@ export default function GalleryProofingWorkspace({
                           className="border-b border-neutral-100 dark:border-neutral-800"
                         >
                           <ProofingAssetCell galleryId={galleryId} asset={a} lutMirror={lutMirror} />
-                          {isVideo ? (
+                          {isVideoLayoutGallery ? (
                             <td className="whitespace-nowrap px-4 py-3 tabular-nums text-neutral-600 dark:text-neutral-400">
                               {formatDuration(a.duration)}
                             </td>
@@ -746,12 +818,12 @@ export default function GalleryProofingWorkspace({
                               ? comments.filter((c) => c.asset_id === a.id).length
                               : "—"}
                           </td>
-                          {isVideo ? (
+                          {isVideoLayoutGallery ? (
                             <td className="max-w-[200px] truncate px-4 py-3 text-neutral-600 dark:text-neutral-400">
                               {latestComment?.body ?? "—"}
                             </td>
                           ) : null}
-                          {isVideo && VIDEO_EXT.test(a.name) ? (
+                          {isVideoLayoutGallery && VIDEO_EXT.test(a.name) ? (
                             <td className="px-4 py-3">
                               <button
                                 type="button"
@@ -762,7 +834,7 @@ export default function GalleryProofingWorkspace({
                                 Review
                               </button>
                             </td>
-                          ) : isVideo ? (
+                          ) : isVideoLayoutGallery ? (
                             <td className="px-4 py-3 text-neutral-300">—</td>
                           ) : null}
                         </tr>

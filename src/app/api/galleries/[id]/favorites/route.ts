@@ -57,7 +57,7 @@ export async function POST(
     return NextResponse.json(
       {
         error: "use_selects_endpoint",
-        message: "This is a video gallery — submit selects via POST /api/galleries/{id}/selects",
+        message: "This is a video-only gallery — submit selects via POST /api/galleries/{id}/selects",
       },
       { status: 400 }
     );
@@ -231,7 +231,7 @@ export async function GET(
 
   let lists = snap.docs.map(mapDoc);
 
-  if (g.gallery_type !== "video") {
+  if (g.gallery_type === "photo" || g.gallery_type === "mixed") {
     lists = lists.filter((l) => l.list_type !== "video_selects");
   }
 

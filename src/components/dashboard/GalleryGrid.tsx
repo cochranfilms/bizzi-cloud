@@ -61,7 +61,7 @@ type GalleryCardProps = {
   basePath: string;
   gallery: {
     id: string;
-    gallery_type: "photo" | "video";
+    gallery_type: "photo" | "video" | "mixed";
     media_mode?: "final" | "raw";
     title: string;
     access_mode: string;
@@ -84,6 +84,7 @@ function GalleryCard({ basePath, gallery: g, onDelete, deletingId }: GalleryCard
     { enabled: !!g.cover_object_key && isInView, size: "cover-sm" }
   );
   const isVideo = g.gallery_type === "video";
+  const isMixed = g.gallery_type === "mixed";
   const modeLabel = g.media_mode === "raw" ? "RAW" : "Final";
 
   return (
@@ -92,14 +93,16 @@ function GalleryCard({ basePath, gallery: g, onDelete, deletingId }: GalleryCard
       className={`group flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white transition-colors hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 ${
         isVideo
           ? "hover:border-violet-400/50 dark:hover:border-violet-500/50"
-          : "hover:border-bizzi-blue/40 dark:hover:border-bizzi-cyan/40"
+          : isMixed
+            ? "hover:border-teal-400/50 dark:hover:border-teal-500/50"
+            : "hover:border-bizzi-blue/40 dark:hover:border-bizzi-cyan/40"
       }`}
     >
       <div
         ref={cardRef}
         className="relative flex aspect-video shrink-0 items-center justify-center overflow-hidden rounded-t-xl bg-neutral-100 dark:bg-neutral-800"
       >
-        {rawPreviewUnavailable && !isVideo ? (
+        {rawPreviewUnavailable && !isVideo && !isMixed ? (
           <div className="flex h-full w-full items-center justify-center bg-neutral-200 px-2 text-center text-[10px] font-medium text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
             RAW preview unavailable
           </div>
@@ -122,6 +125,11 @@ function GalleryCard({ basePath, gallery: g, onDelete, deletingId }: GalleryCard
         ) : (
           isVideo ? (
             <Film className="h-12 w-12 text-neutral-400 dark:text-neutral-500" />
+          ) : isMixed ? (
+            <div className="flex items-center gap-1 text-neutral-400 dark:text-neutral-500">
+              <Images className="h-9 w-9" />
+              <Film className="h-9 w-9" />
+            </div>
           ) : (
             <Images className="h-12 w-12 text-neutral-300 dark:text-neutral-600" />
           )
@@ -131,10 +139,12 @@ function GalleryCard({ basePath, gallery: g, onDelete, deletingId }: GalleryCard
             className={`rounded-md px-2 py-0.5 text-xs font-medium ${
               isVideo
                 ? "bg-violet-600/90 text-white"
-                : "bg-amber-600/90 text-white"
+                : isMixed
+                  ? "bg-teal-600/90 text-white"
+                  : "bg-amber-600/90 text-white"
             }`}
           >
-            {isVideo ? "Video" : "Photo"}
+            {isVideo ? "Video" : isMixed ? "Mixed" : "Photo"}
           </span>
           <span className="rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white backdrop-blur-sm">
             {modeLabel}
@@ -184,7 +194,7 @@ function GalleryCard({ basePath, gallery: g, onDelete, deletingId }: GalleryCard
   );
 }
 
-type TypeFilter = "all" | "photo" | "video";
+type TypeFilter = "all" | "photo" | "video" | "mixed";
 type SortOption = "updated" | "event_date" | "views" | "expiring";
 
 interface GalleryGridProps {
@@ -303,6 +313,26 @@ export default function GalleryGrid({ basePath }: GalleryGridProps) {
         </div>
       </div>
 
+      {galleries.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <Filter className="h-4 w-4 text-neutral-400" aria-hidden />
+          {(["all", "photo", "video", "mixed"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setTypeFilter(f)}
+              className={`rounded-full px-3 py-1 font-medium transition-colors ${
+                typeFilter === f
+                  ? "bg-bizzi-blue text-white dark:bg-bizzi-cyan"
+                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+              }`}
+            >
+              {f === "all" ? "All" : f === "photo" ? "Photo" : f === "video" ? "Video" : "Mixed"}
+            </button>
+          ))}
+        </div>
+      )}
+
       {galleries.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-neutral-200 py-16 dark:border-neutral-700">
           <Images className="mb-4 h-16 w-16 text-neutral-300 dark:text-neutral-600" />
@@ -323,7 +353,7 @@ export default function GalleryGrid({ basePath }: GalleryGridProps) {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {galleries.map((g) => (
+          {filteredAndSorted.map((g) => (
             <GalleryCard key={g.id} basePath={resolvedBasePath} gallery={g} onDelete={handleDeleteClick} deletingId={deletingId} />
           ))}
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Archive, Check, Download, FileIcon, Film, Info, Play, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { Archive, Download, FileIcon, Film, Info, Play, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import type { CardSize, AspectRatio, ThumbnailScale } from "@/context/LayoutSettingsContext";
 import type { CardPresentation } from "@/lib/card-presentation";
@@ -36,6 +36,7 @@ import {
 } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
 import { resolveLocationLabel } from "@/lib/metadata-display";
+import { useDelayedSelectOrOpen } from "@/hooks/useDelayedSelectOrOpen";
 
 interface FileCardProps {
   file: RecentFile;
@@ -206,11 +207,11 @@ function fileThumbCaptionSecondary(file: RecentFile, isMacosPackage: boolean): s
   return `${formatBytes(file.size)}`;
 }
 
-// Scaled so largest never exceeds former medium; large = former medium
+// ~8% larger than prior file card chrome
 const FILE_SIZE_CLASSES = {
-  small: { padding: "p-3", icon: "h-8 w-8", iconInner: "h-4 w-4", text: "text-xs" },
-  medium: { padding: "p-4", icon: "h-10 w-10", iconInner: "h-5 w-5", text: "text-xs" },
-  large: { padding: "p-6", icon: "h-16 w-16", iconInner: "h-8 w-8", text: "text-sm" },
+  small: { padding: "p-3.5", icon: "h-[2.15rem] w-[2.15rem]", iconInner: "h-4 w-4", text: "text-xs" },
+  medium: { padding: "p-[1.1rem]", icon: "h-11 w-11", iconInner: "h-5 w-5", text: "text-xs" },
+  large: { padding: "p-[1.62rem]", icon: "h-[4.35rem] w-[4.35rem]", iconInner: "h-[2.15rem] w-[2.15rem]", text: "text-sm" },
 } as const;
 
 export default function FileCard({
@@ -291,8 +292,8 @@ export default function FileCard({
   const sizeClasses = FILE_SIZE_CLASSES[layoutSize];
   const aspectClass = getCardAspectClass(layoutAspectRatio);
   const objectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
-  // Videos respect thumbnailScale like images: Fill = object-cover (Frame.io style, no black bars), Fit = object-contain.
-  const videoObjectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
+  /** Grid video tiles always cover: poster JPEGs are often letterboxed 16:9 while the proxy stream is true 9:16. */
+  const videoObjectFit = "object-cover" as const;
 
   const creativeThumb = resolveCreativeProjectTile(recentFileToCreativeThumbnailSource(file));
   const brandedTileSize =
@@ -311,6 +312,23 @@ export default function FileCard({
   const captionSecondary = fileThumbCaptionSecondary(file, isMacosPackage);
 
   const previewShellActive = canPreview && !blockPreviewFromShell;
+  const previewOpen = useCallback(() => {
+    (onPackageInfo ?? onClick)?.();
+  }, [onPackageInfo, onClick]);
+  const doubleClickOpen = useCallback(() => {
+    if (isMacosPackage && onMacosPackageNavigate) {
+      onMacosPackageNavigate();
+      return;
+    }
+    (onPackageInfo ?? onClick)?.();
+  }, [isMacosPackage, onMacosPackageNavigate, onPackageInfo, onClick]);
+  const { onPointerAreaClick, onPointerAreaDoubleClick, onCardKeyDown } = useDelayedSelectOrOpen({
+    selectable: !!(selectable && onSelect && previewShellActive),
+    onSelect,
+    onOpen: doubleClickOpen,
+  });
+  const shellInteractive =
+    previewShellActive && (!!(selectable && onSelect) || canPreview);
   const rootShell = isThumb
     ? `group touch-manipulation relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl transition-all ${
         selected
@@ -340,65 +358,49 @@ export default function FileCard({
       ref={cardRef}
       title={!showCardInfo ? file.name : undefined}
       className={rootShell}
-      role={canPreview && !blockPreviewFromShell ? "button" : undefined}
-      tabIndex={canPreview && !blockPreviewFromShell ? 0 : undefined}
+      role={shellInteractive ? "button" : undefined}
+      tabIndex={shellInteractive ? 0 : undefined}
       aria-label={canPreview && isThumb && !showCardInfo ? file.name : undefined}
-      onClick={canPreview && !blockPreviewFromShell ? (onPackageInfo ?? onClick) : undefined}
+      onClick={
+        previewShellActive
+          ? selectable && onSelect
+            ? onPointerAreaClick
+            : previewOpen
+          : undefined
+      }
       onDoubleClick={
-        isMacosPackage && onMacosPackageNavigate
-          ? (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onMacosPackageNavigate();
-            }
+        previewShellActive
+          ? selectable && onSelect
+            ? onPointerAreaDoubleClick
+            : isMacosPackage && onMacosPackageNavigate
+              ? (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onMacosPackageNavigate();
+                }
+              : undefined
           : undefined
       }
       onKeyDown={
-        canPreview && !blockPreviewFromShell
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                (onPackageInfo ?? onClick)?.();
+        previewShellActive
+          ? selectable && onSelect
+            ? onCardKeyDown
+            : (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  previewOpen();
+                }
               }
-            }
           : undefined
       }
     >
       {topBadge ? (
         <span
-          className={`pointer-events-none absolute left-2 z-[21] rounded-md bg-[var(--enterprise-primary)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm ring-1 ring-black/10 dark:ring-white/20 ${
-            selectable && onSelect ? "top-9" : "top-2"
-          }`}
+          className="pointer-events-none absolute left-2 top-2 z-[21] rounded-md bg-[var(--enterprise-primary)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm ring-1 ring-black/10 dark:ring-white/20"
         >
           {topBadge}
         </span>
       ) : null}
-      {selectable && onSelect && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect();
-          }}
-          className={`absolute left-2 top-2 z-20 flex items-center justify-center rounded-md border-2 transition-colors ${
-            isThumb
-              ? "h-5 w-5 border-white/60 bg-black/40 backdrop-blur-sm hover:bg-black/55 dark:border-white/50"
-              : "h-6 w-6 hover:bg-neutral-100 dark:hover:bg-neutral-700"
-          } ${
-            selected
-              ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-blue dark:bg-bizzi-blue"
-              : isThumb
-                ? "border-white/60 bg-black/35"
-                : "border-neutral-300 bg-transparent dark:border-neutral-600"
-          }`}
-          aria-label={selected ? "Deselect" : "Select"}
-          aria-pressed={selected}
-        >
-          {selected && (
-            <Check className={`${isThumb ? "h-3 w-3" : "h-3.5 w-3.5"} text-white stroke-[3]`} />
-          )}
-        </button>
-      )}
       {((isMacosPackage && (onDownloadPackage || onPackageInfo || onDelete)) ||
         (!isMacosPackage && (onDelete || file.driveId))) && (
         <div
@@ -516,6 +518,7 @@ export default function FileCard({
             thumbnailUrl={videoThumbnailUrl ?? thumbnailUrl}
             showPlayIcon
             objectFit={videoObjectFit}
+            eagerLoadStream={isInView}
             className="absolute inset-0 h-full min-h-0 w-full"
           />
         ) : thumbnailUrl || videoThumbnailUrl || pdfThumbnailUrl ? (

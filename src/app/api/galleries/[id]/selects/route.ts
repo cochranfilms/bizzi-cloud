@@ -49,11 +49,11 @@ export async function POST(
   if (!gallerySnap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
 
   const g = gallerySnap.data()!;
-  if (g.gallery_type !== "video") {
+  if (g.gallery_type !== "video" && g.gallery_type !== "mixed") {
     return NextResponse.json(
       {
         error: "use_favorites_endpoint",
-        message: "This is a photo gallery — submit favorites via POST /api/galleries/{id}/favorites",
+        message: "This gallery does not support video selects — submit favorites via POST /api/galleries/{id}/favorites",
       },
       { status: 400 }
     );
@@ -153,8 +153,11 @@ export async function GET(
   if (!gallerySnap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
 
   const g = gallerySnap.data()!;
-  if (g.gallery_type !== "video") {
-    return NextResponse.json({ error: "This endpoint is only for video galleries" }, { status: 400 });
+  if (g.gallery_type !== "video" && g.gallery_type !== "mixed") {
+    return NextResponse.json(
+      { error: "This endpoint is only for video and mixed galleries" },
+      { status: 400 }
+    );
   }
 
   const access = await verifyGalleryViewAccess(

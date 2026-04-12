@@ -258,10 +258,6 @@ export async function POST(
 
   const correlationId = getRequestCorrelationId(request);
 
-  const galleryType = (galleryRow.gallery_type === "video" ? "video" : "photo") as
-    | "photo"
-    | "video";
-
   type FileRow = { id: string; data: DocumentData };
   const fileRows: FileRow[] = [];
   for (const backupFileId of backupFileIds) {
@@ -311,8 +307,9 @@ export async function POST(
     const sizeBytes = (fileData.size_bytes ?? 0) as number;
     const mediaType = getMediaType(name);
 
-    if (galleryType === "photo" && mediaType === "video") continue;
-    if (galleryType === "video" && mediaType === "image") continue;
+    const rawGalleryType = galleryRow.gallery_type;
+    if (rawGalleryType === "photo" && mediaType === "video") continue;
+    if (rawGalleryType === "video" && mediaType === "image") continue;
 
     const driveId = fileData.linked_drive_id as string | undefined;
     const driveName = driveId ? driveNameById.get(driveId) ?? "" : "";

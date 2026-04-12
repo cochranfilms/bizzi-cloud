@@ -196,7 +196,7 @@ interface GallerySettingsFormProps {
     invoice_required_for_download?: boolean;
     /** Video: client file downloads only when `all_assets` */
     download_policy?: string | null;
-    gallery_type?: "photo" | "video";
+    gallery_type?: "photo" | "video" | "mixed";
     featured_video_asset_id?: string | null;
     media_mode?: "final" | "raw";
     /** @deprecated */
@@ -491,22 +491,26 @@ export default function GallerySettingsForm({
   }, [user, galleryId, invoiceStatus, onRefetch]);
 
   const isVideoGallery = initialData.gallery_type === "video";
+  const isMixedGallery = initialData.gallery_type === "mixed";
+  const isVideoDeliveryGallery = isVideoGallery || isMixedGallery;
   const isRawGallery = mediaMode === "raw";
 
-  const profileKind = isVideoGallery ? "video" : "photo";
+  const profileKind = isMixedGallery ? "mixed" : isVideoGallery ? "video" : "photo";
   const currentProfileTitle = galleryProfileTitle(profileKind, mediaMode);
   const committedProfileTitle = galleryProfileTitle(profileKind, committedMediaMode);
 
   const settingsHealthNotes = useMemo(
     () =>
       buildGalleryHealthAdvisories({
-        kind: isVideoGallery ? "video" : "photo",
-        mediaMode: committedMediaMode,
+        kind: isMixedGallery ? "photo" : isVideoGallery ? "video" : "photo",
+        mediaMode: isMixedGallery ? "final" : committedMediaMode,
         assetNames: assetNamesForHealth,
         lutLibraryCount:
-          !isVideoGallery && committedMediaMode === "raw" ? lutLibrary.length : undefined,
+          !isVideoGallery && !isMixedGallery && committedMediaMode === "raw"
+            ? lutLibrary.length
+            : undefined,
       }),
-    [assetNamesForHealth, committedMediaMode, isVideoGallery, lutLibrary.length]
+    [assetNamesForHealth, committedMediaMode, isVideoGallery, isMixedGallery, lutLibrary.length]
   );
 
   const requestMediaModeChange = (next: "final" | "raw") => {
@@ -601,8 +605,8 @@ export default function GallerySettingsForm({
   }, [fetchCoverAssets]);
 
   useEffect(() => {
-    if (isVideoGallery) fetchVideoAssets();
-  }, [isVideoGallery, fetchVideoAssets]);
+    if (isVideoDeliveryGallery) fetchVideoAssets();
+  }, [isVideoDeliveryGallery, fetchVideoAssets]);
 
   const fetchLUT = useCallback(async () => {
     if (!user || !galleryId) return;
@@ -628,7 +632,7 @@ export default function GallerySettingsForm({
     const items: SettingsNavItem[] = [
       { id: "profile", label: "Gallery profile", icon: Layers },
     ];
-    if (initialData.gallery_type === "video") {
+    if (initialData.gallery_type === "video" || initialData.gallery_type === "mixed") {
       items.push({ id: "video", label: "Video delivery", icon: Film });
     }
     items.push(
@@ -638,9 +642,11 @@ export default function GallerySettingsForm({
       { id: "studio", label: "Studio handle", icon: Link2 },
       { id: "branding", label: "Branding", icon: Palette },
       { id: "billing", label: "Invoice & payment", icon: CreditCard },
-      { id: "downloads", label: "Downloads & watermark", icon: Download },
-      { id: "creative", label: "Creative LUT", icon: Sparkles }
+      { id: "downloads", label: "Downloads & watermark", icon: Download }
     );
+    if (initialData.gallery_type !== "mixed") {
+      items.push({ id: "creative", label: "Creative LUT", icon: Sparkles });
+    }
     return items;
   }, [initialData.gallery_type]);
 
@@ -667,7 +673,14 @@ export default function GallerySettingsForm({
   }, [galleryNavIds]);
 
   useEffect(() => {
-    if (activeSettingsSection === "video" && initialData.gallery_type !== "video") {
+    if (
+      activeSettingsSection === "video" &&
+      initialData.gallery_type !== "video" &&
+      initialData.gallery_type !== "mixed"
+    ) {
+      setActiveSettingsSection("profile");
+    }
+    if (activeSettingsSection === "creative" && initialData.gallery_type === "mixed") {
       setActiveSettingsSection("profile");
     }
   }, [activeSettingsSection, initialData.gallery_type]);
@@ -1111,8 +1124,9 @@ export default function GallerySettingsForm({
             {galleryProfileDetailDescription(profileKind, mediaMode)}
           </p>
           <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-500">
-            This profile was set when the gallery was created. You can change it below if your workflow
-            shifts; branding, downloads, and other settings on this page refine how the gallery behaves.
+            {isMixedGallery
+              ? "Mixed galleries are fixed to Final delivery for photos and videos together. Branding, downloads, and video delivery settings on this page refine how the gallery behaves."
+              : "This profile was set when the gallery was created. You can change it below if your workflow shifts; branding, downloads, and other settings on this page refine how the gallery behaves."}
           </p>
         </div>
 
@@ -1134,66 +1148,68 @@ export default function GallerySettingsForm({
           </div>
         )}
 
-        <div className="mt-5">
-          <button
-            type="button"
-            onClick={() => setShowProfileChangePanel((o) => !o)}
-            className="flex w-full items-center justify-between rounded-lg border border-neutral-200 px-4 py-3 text-left text-sm font-medium text-neutral-800 transition-colors hover:bg-neutral-50 dark:border-neutral-600 dark:text-neutral-200 dark:hover:bg-neutral-800/80 sm:w-auto sm:min-w-[220px]"
-          >
-            <span>Change gallery profile</span>
-            {showProfileChangePanel ? (
-              <ChevronUp className="h-4 w-4 shrink-0" />
-            ) : (
-              <ChevronDown className="h-4 w-4 shrink-0" />
-            )}
-          </button>
+        {!isMixedGallery && (
+          <div className="mt-5">
+            <button
+              type="button"
+              onClick={() => setShowProfileChangePanel((o) => !o)}
+              className="flex w-full items-center justify-between rounded-lg border border-neutral-200 px-4 py-3 text-left text-sm font-medium text-neutral-800 transition-colors hover:bg-neutral-50 dark:border-neutral-600 dark:text-neutral-200 dark:hover:bg-neutral-800/80 sm:w-auto sm:min-w-[220px]"
+            >
+              <span>Change gallery profile</span>
+              {showProfileChangePanel ? (
+                <ChevronUp className="h-4 w-4 shrink-0" />
+              ) : (
+                <ChevronDown className="h-4 w-4 shrink-0" />
+              )}
+            </button>
 
-          {showProfileChangePanel && (
-            <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50/80 p-4 dark:border-neutral-600 dark:bg-neutral-800/40">
-              <h3 className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                Change profile
-              </h3>
-              <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-500">
-                {isVideoGallery
-                  ? "Switch between delivery-focused and source-style video review."
-                  : "Switch between delivery-ready photos and source RAW review with optional LUT preview."}{" "}
-                {isVideoGallery && committedMediaMode === "raw"
-                  ? "Switching to Final Delivery archives original source videos from this gallery into a folder named RAW inside this gallery’s folder in Gallery Media; nothing is permanently deleted. You will be asked to confirm before that switch."
-                  : totalAssetCount > 0
-                    ? "You will be asked to confirm because this gallery already has assets."
-                    : null}
-              </p>
-              <div className="flex flex-wrap gap-4">
-                <label className="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="radio"
-                    name="media_mode_settings"
-                    checked={mediaMode === "final"}
-                    onChange={() => requestMediaModeChange("final")}
-                  />
-                  <span className="text-sm text-neutral-800 dark:text-neutral-200">Final</span>
-                </label>
-                <label className="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="radio"
-                    name="media_mode_settings"
-                    checked={mediaMode === "raw"}
-                    onChange={() => requestMediaModeChange("raw")}
-                  />
-                  <span className="text-sm text-neutral-800 dark:text-neutral-200">RAW</span>
-                </label>
+            {showProfileChangePanel && (
+              <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50/80 p-4 dark:border-neutral-600 dark:bg-neutral-800/40">
+                <h3 className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  Change profile
+                </h3>
+                <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-500">
+                  {isVideoGallery
+                    ? "Switch between delivery-focused and source-style video review."
+                    : "Switch between delivery-ready photos and source RAW review with optional LUT preview."}{" "}
+                  {isVideoGallery && committedMediaMode === "raw"
+                    ? "Switching to Final Delivery archives original source videos from this gallery into a folder named RAW inside this gallery’s folder in Gallery Media; nothing is permanently deleted. You will be asked to confirm before that switch."
+                    : totalAssetCount > 0
+                      ? "You will be asked to confirm because this gallery already has assets."
+                      : null}
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="radio"
+                      name="media_mode_settings"
+                      checked={mediaMode === "final"}
+                      onChange={() => requestMediaModeChange("final")}
+                    />
+                    <span className="text-sm text-neutral-800 dark:text-neutral-200">Final</span>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="radio"
+                      name="media_mode_settings"
+                      checked={mediaMode === "raw"}
+                      onChange={() => requestMediaModeChange("raw")}
+                    />
+                    <span className="text-sm text-neutral-800 dark:text-neutral-200">RAW</span>
+                  </label>
+                </div>
+                <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
+                  RAW enables creative LUT preview tools in this gallery. Final is optimized for clean
+                  delivery and viewing.
+                </p>
               </div>
-              <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
-                RAW enables creative LUT preview tools in this gallery. Final is optimized for clean
-                delivery and viewing.
-              </p>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </section>
       )}
 
-      {activeSettingsSection === "video" && isVideoGallery && (
+      {activeSettingsSection === "video" && isVideoDeliveryGallery && (
         <>
         <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
           <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">

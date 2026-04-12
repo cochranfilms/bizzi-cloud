@@ -84,7 +84,7 @@ function logPublicGalleryVideoLutSurface(
 
 interface GalleryData {
   id: string;
-  gallery_type?: "photo" | "video";
+  gallery_type?: "photo" | "video" | "mixed";
   media_mode?: "final" | "raw";
   allow_comments?: boolean;
   allow_favorites?: boolean;
@@ -201,42 +201,47 @@ function SaveFavoritesModal({
   count,
   galleryId,
   password,
-  listKind,
+  galleryType,
+  saveSummary,
   onSave,
   onClose,
 }: {
   count: number;
   galleryId: string;
   password?: string;
-  /** Photo galleries: favorites. Video: selects (share URL + copy). */
-  listKind: "favorites" | "selects";
-  onSave: (email: string, name: string) => Promise<string | null>;
+  galleryType: "photo" | "video" | "mixed";
+  /** Extra line for mixed galleries (e.g. photo vs video counts). */
+  saveSummary?: string | null;
+  onSave: (
+    email: string,
+    name: string
+  ) => Promise<{ items: Array<{ kind: "favorites" | "selects"; id: string }> } | null>;
   onClose: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [savedListId, setSavedListId] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [savedItems, setSavedItems] = useState<Array<{ kind: "favorites" | "selects"; id: string }>>(
+    []
+  );
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const shareUrl =
-    savedListId &&
-    (() => {
-      const base = typeof window !== "undefined" ? window.location.origin : "";
-      const segment = listKind === "selects" ? "selects" : "favorites";
-      const path = `/g/${galleryId}/${segment}/${savedListId}`;
-      const params = password ? `?password=${encodeURIComponent(password)}` : "";
-      return `${base}${path}${params}`;
-    })();
+  const buildShareUrl = (kind: "favorites" | "selects", listId: string) => {
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    const segment = kind === "selects" ? "selects" : "favorites";
+    const path = `/g/${galleryId}/${segment}/${listId}`;
+    const params = password ? `?password=${encodeURIComponent(password)}` : "";
+    return `${base}${path}${params}`;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      const listId = await onSave(email.trim(), name.trim());
-      if (listId) setSavedListId(listId);
+      const result = await onSave(email.trim(), name.trim());
+      if (result?.items?.length) setSavedItems(result.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -244,70 +249,93 @@ function SaveFavoritesModal({
     }
   };
 
-  const handleCopyLink = async () => {
-    if (!shareUrl) return;
+  const handleCopyLink = async (url: string, key: string) => {
     try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(url);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 2000);
     } catch {
-      // fallback for older browsers
       setError("Copy failed");
     }
   };
 
-  const handleEmailLink = () => {
-    if (!shareUrl) return;
+  const handleEmailLinks = () => {
+    if (savedItems.length === 0) return;
+    const lines = savedItems.map((it) => {
+      const u = buildShareUrl(it.kind, it.id);
+      return it.kind === "selects" ? `Video selects: ${u}` : `Photo favorites: ${u}`;
+    });
     const subject =
-      listKind === "selects"
-        ? encodeURIComponent("My video selects from the gallery")
-        : encodeURIComponent("My favorite photos from the gallery");
-    const body =
-      listKind === "selects"
-        ? encodeURIComponent(
-            `Here's a link to view and download my selected clips:\n\n${shareUrl}`
-          )
-        : encodeURIComponent(
-            `Here's a link to view and download my favorite photos:\n\n${shareUrl}`
-          );
+      savedItems.length > 1
+        ? encodeURIComponent("My selections from the gallery")
+        : savedItems[0].kind === "selects"
+          ? encodeURIComponent("My video selects from the gallery")
+          : encodeURIComponent("My favorite photos from the gallery");
+    const body = encodeURIComponent(`${lines.join("\n\n")}\n`);
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
 
+  const formTitle =
+    galleryType === "video"
+      ? "Save selects list"
+      : galleryType === "mixed"
+        ? "Save proofing lists"
+        : "Save favorites list";
+  const formBlurb =
+    galleryType === "video"
+      ? `${count} clip${count !== 1 ? "s" : ""} selected. Add your details to save.`
+      : galleryType === "mixed"
+        ? `${count} item${count !== 1 ? "s" : ""} selected. Photo picks save as favorites; video picks save as selects.${saveSummary ? ` ${saveSummary}` : ""}`
+        : `${count} photo${count !== 1 ? "s" : ""} selected. Add your details to save.`;
+
   const modal =
-    savedListId && shareUrl ? (
+    savedItems.length > 0 ? (
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
         <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
           <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
-            {listKind === "selects" ? "Selects saved" : "Favorites saved"}
+            {savedItems.length > 1 ? "Lists saved" : savedItems[0].kind === "selects" ? "Selects saved" : "Favorites saved"}
           </h2>
           <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            {listKind === "selects"
-              ? "Share this link to view and download your selected clips."
-              : "Share this link to view and download your favorites."}
+            {savedItems.length > 1
+              ? "Share these links — photo favorites and video selects are separate lists."
+              : savedItems[0].kind === "selects"
+                ? "Share this link to view and download your selected clips."
+                : "Share this link to view and download your favorites."}
           </p>
-          <div className="mt-4 flex flex-col gap-3">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                readOnly
-                value={shareUrl}
-                className="flex-1 truncate rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
-              />
-              <button
-                type="button"
-                onClick={handleCopyLink}
-                className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan"
-              >
-                {copied ? "Copied" : "Copy"}
-              </button>
-            </div>
+          <div className="mt-4 flex flex-col gap-4">
+            {savedItems.map((it) => {
+              const url = buildShareUrl(it.kind, it.id);
+              const key = `${it.kind}:${it.id}`;
+              return (
+                <div key={key} className="flex flex-col gap-2">
+                  <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                    {it.kind === "selects" ? "Video selects" : "Photo favorites"}
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={url}
+                      className="flex-1 truncate rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleCopyLink(url, key)}
+                      className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan"
+                    >
+                      {copiedKey === key ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
             <button
               type="button"
-              onClick={handleEmailLink}
+              onClick={handleEmailLinks}
               className="flex items-center justify-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium dark:border-neutral-700 dark:text-neutral-300"
             >
               <Mail className="h-4 w-4" />
-              Email me this link
+              Email me {savedItems.length > 1 ? "these links" : "this link"}
             </button>
             <button
               type="button"
@@ -323,12 +351,10 @@ function SaveFavoritesModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
-          {listKind === "selects" ? "Save selects list" : "Save favorites list"}
+          {formTitle}
         </h2>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          {listKind === "selects"
-            ? `${count} clip${count !== 1 ? "s" : ""} selected. Add your details to save.`
-            : `${count} photo${count !== 1 ? "s" : ""} selected. Add your details to save.`}
+          {formBlurb}
         </p>
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {error && (
@@ -1776,7 +1802,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     : null;
 
   const featuredVideoAsset =
-    data?.gallery.gallery_type === "video" && data?.gallery.featured_video_asset_id
+    (data?.gallery.gallery_type === "video" || data?.gallery.gallery_type === "mixed") &&
+    data?.gallery.featured_video_asset_id
       ? data.assets.find(
           (a) => a.id === data.gallery.featured_video_asset_id && isVideo(a.name)
         ) ?? null
@@ -2013,12 +2040,19 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   }, [galleryId]);
 
   const handleSaveFavorites = useCallback(
-    async (clientEmail: string, clientName: string): Promise<string | null> => {
+    async (
+      clientEmail: string,
+      clientName: string
+    ): Promise<{ items: Array<{ kind: "favorites" | "selects"; id: string }> } | null> => {
       const assetIds = Array.from(selectedFavorites);
-      const isVideoList = data?.gallery.gallery_type === "video";
-      const pathSeg = isVideoList ? "selects" : "favorites";
-      const url = new URL(`/api/galleries/${galleryId}/${pathSeg}`, window.location.origin);
-      if (password) url.searchParams.set("password", password);
+      const gt = data?.gallery.gallery_type ?? "photo";
+      const pool =
+        selectedCollectionId === null
+          ? (data?.assets ?? [])
+          : (data?.assets ?? []).filter(
+              (a) => (a.collection_id ?? null) === selectedCollectionId
+            );
+      const idSet = new Set(assetIds);
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
         "X-Bizzi-Shell": shellContextFromClientPathname(pathname ?? null),
@@ -2027,21 +2061,55 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         const t = await user.getIdToken();
         if (t) headers.Authorization = `Bearer ${t}`;
       }
-      const res = await fetch(url.toString(), {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          client_email: clientEmail || null,
-          client_name: clientName || null,
-          asset_ids: assetIds,
-        }),
-      });
-      if (!res.ok) {
-        const errBody = await res.json();
-        throw new Error(errBody.message ?? errBody.error ?? "Failed to save");
+
+      const postList = async (pathSeg: "favorites" | "selects", ids: string[]) => {
+        const url = new URL(`/api/galleries/${galleryId}/${pathSeg}`, window.location.origin);
+        if (password) url.searchParams.set("password", password);
+        const res = await fetch(url.toString(), {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            client_email: clientEmail || null,
+            client_name: clientName || null,
+            asset_ids: ids,
+          }),
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(
+            (errBody as { message?: string }).message ??
+              (errBody as { error?: string }).error ??
+              "Failed to save"
+          );
+        }
+        const resBody = (await res.json()) as { id?: string };
+        const listId = typeof resBody.id === "string" ? resBody.id : null;
+        if (!listId) throw new Error("Invalid response from server");
+        return listId;
+      };
+
+      const items: Array<{ kind: "favorites" | "selects"; id: string }> = [];
+
+      if (gt === "mixed") {
+        const photoIds = pool
+          .filter((a) => idSet.has(a.id) && isImage(a.name))
+          .map((a) => a.id);
+        const videoIds = pool
+          .filter((a) => idSet.has(a.id) && isVideo(a.name))
+          .map((a) => a.id);
+        if (photoIds.length) {
+          items.push({ kind: "favorites", id: await postList("favorites", photoIds) });
+        }
+        if (videoIds.length) {
+          items.push({ kind: "selects", id: await postList("selects", videoIds) });
+        }
+        if (items.length === 0) throw new Error("No photos or videos selected to save");
+      } else if (gt === "video") {
+        items.push({ kind: "selects", id: await postList("selects", assetIds) });
+      } else {
+        items.push({ kind: "favorites", id: await postList("favorites", assetIds) });
       }
-      const resBody = await res.json();
-      const listId = typeof resBody.id === "string" ? resBody.id : null;
+
       setSelectedFavorites(new Set());
       if (typeof window !== "undefined") {
         try {
@@ -2050,9 +2118,18 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           // ignore
         }
       }
-      return listId;
+      return { items };
     },
-    [galleryId, password, user, selectedFavorites, data?.gallery.gallery_type, pathname]
+    [
+      galleryId,
+      password,
+      user,
+      selectedFavorites,
+      data?.gallery.gallery_type,
+      data?.assets,
+      selectedCollectionId,
+      pathname,
+    ]
   );
 
   const fetchPreviewComments = useCallback(
@@ -2412,6 +2489,34 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   const { gallery, assets, collections } = data;
 
+  const isStrictVideoGallery = gallery.gallery_type === "video";
+  const isVideoLayoutGallery =
+    gallery.gallery_type === "video" || gallery.gallery_type === "mixed";
+
+  const filteredAssets =
+    selectedCollectionId === null
+      ? assets
+      : assets.filter(
+          (a) => (a.collection_id ?? null) === selectedCollectionId
+        );
+
+  const galleryTypeForSaveModal: "photo" | "video" | "mixed" =
+    gallery.gallery_type === "mixed"
+      ? "mixed"
+      : gallery.gallery_type === "video"
+        ? "video"
+        : "photo";
+
+  const mixedSelectionSummary =
+    gallery.gallery_type === "mixed" && selectedFavorites.size > 0
+      ? (() => {
+          const idSet = new Set(selectedFavorites);
+          const p = filteredAssets.filter((a) => idSet.has(a.id) && isImage(a.name)).length;
+          const v = filteredAssets.filter((a) => idSet.has(a.id) && isVideo(a.name)).length;
+          return `Includes ${p} photo${p !== 1 ? "s" : ""} and ${v} video${v !== 1 ? "s" : ""}.`;
+        })()
+      : null;
+
   const mediaMode = normalizeGalleryMediaMode({
     media_mode: gallery.media_mode ?? null,
     source_format: gallery.source_format ?? null,
@@ -2423,7 +2528,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const creativeLutOn = resolveGalleryCreativeLutEnabledFromPayload(gallery);
 
   const clientLutSource =
-    gallery.gallery_type === "video"
+    isStrictVideoGallery
       ? (videoLutDisplay?.resolvedLutSource ?? null)
       : photoRawLutSource;
 
@@ -2434,30 +2539,23 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       : null;
 
   const imageHeroLutUrl =
-    gallery.gallery_type === "video"
+    isStrictVideoGallery
       ? videoLutDisplay?.shouldApplyLut
         ? (videoLutDisplay.resolvedLutSource ?? null)
         : null
       : clientLutSource;
 
   const heroVideoLutSource =
-    gallery.gallery_type === "video"
+    isStrictVideoGallery
       ? (videoLutDisplay?.resolvedLutSource ?? null)
       : clientLutSource;
-
-  const filteredAssets =
-    selectedCollectionId === null
-      ? assets
-      : assets.filter(
-          (a) => (a.collection_id ?? null) === selectedCollectionId
-        );
   const accent = gallery.branding.accent_color ?? "#00BFFF";
   const bgTheme = getGalleryBackgroundTheme(gallery.branding.background_theme);
   const isDarkBg = bgTheme.textTone === "light";
 
   const clientMayDownloadGalleryLevel = clientMayDownloadGalleryFiles(gallery);
   const videoCapabilityPills =
-    gallery.gallery_type === "video" ? buildVideoGalleryCapabilityPills(gallery) : [];
+    isVideoLayoutGallery ? buildVideoGalleryCapabilityPills(gallery) : [];
   const deliveryModeLabel = deliveryModeInfoLabel(gallery.delivery_mode);
   const reviewInstrRaw = gallery.client_review_instructions?.trim() ?? "";
   const reviewInstrCompact =
@@ -2485,7 +2583,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     galleryClientLutEligible &&
     creativeLutOn &&
     lutPreviewEnabled &&
-    (gallery.gallery_type === "video"
+    (isStrictVideoGallery
       ? !!videoLutDisplay?.shouldApplyLut
       : !!clientLutSource);
 
@@ -2509,11 +2607,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   /** Video gallery intro (meta, review, pills, description) on the hero overlay — keeps main for grid + actions only. */
   const videoGalleryHeroOverlay =
-    gallery.gallery_type === "video" && heroHasMediaBackdrop ? (
+    isVideoLayoutGallery && heroHasMediaBackdrop ? (
       <div className="pointer-events-auto flex w-full max-w-2xl flex-col items-center gap-4 px-2">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/85">
-          Video · {mediaMode === "raw" ? "RAW" : "Final"}
-          {deliveryModeLabel ? ` · ${deliveryModeLabel}` : ""}
+          {gallery.gallery_type === "mixed"
+            ? `Mixed · Final${deliveryModeLabel ? ` · ${deliveryModeLabel}` : ""}`
+            : `Video · ${mediaMode === "raw" ? "RAW" : "Final"}${
+                deliveryModeLabel ? ` · ${deliveryModeLabel}` : ""
+              }`}
         </p>
         {reviewInstrRaw ? (
           reviewInstrCompact ? (
@@ -2616,7 +2717,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   ) : null}
                   <div className="relative z-[1] h-full w-full min-h-0">
                     {(() => {
-                      if (gallery.gallery_type === "video" && featuredVideoStreamUrl) {
+                      if (isStrictVideoGallery && featuredVideoStreamUrl) {
                         const payload = {
                           selectedLutId,
                           lutPreviewEnabled,
@@ -2630,7 +2731,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                           heroVideoLutActive,
                           propLutSource: heroVideoLutSource,
                           propShouldApplyLut:
-                            gallery.gallery_type === "video"
+                            isStrictVideoGallery
                               ? !!videoLutDisplay?.shouldApplyLut
                               : true,
                           streamUrl:
@@ -2645,10 +2746,10 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                             !galleryClientLutEligible && "!clientLutEligible",
                             !creativeLutOn && "!creativeLutOn",
                             !lutPreviewEnabled && "!lutPreviewEnabled",
-                            gallery.gallery_type === "video" &&
+                            isStrictVideoGallery &&
                               !videoLutDisplay?.shouldApplyLut &&
                               "!resolverShouldApply",
-                            gallery.gallery_type !== "video" &&
+                            !isStrictVideoGallery &&
                               !clientLutSource &&
                               "!photoClientLutSource",
                           ].filter(Boolean),
@@ -2664,7 +2765,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                     {heroVideoLutActive ? (
                       <VideoWithLUT
                         key={`hero:${featuredVideoStreamUrl}:${heroVideoLutSource ?? "orig"}:${
-                          gallery.gallery_type === "video"
+                          isStrictVideoGallery
                             ? (videoLutDisplay?.shouldApplyLut ? 1 : 0)
                             : lutPreviewEnabled
                               ? 1
@@ -2675,11 +2776,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                         showLUTOption={false}
                         lutSource={heroVideoLutSource}
                         creativePreviewOn={
-                          gallery.gallery_type === "video" ? undefined : true
+                          isStrictVideoGallery ? undefined : true
                         }
-                        galleryControlledLut={gallery.gallery_type === "video"}
+                        galleryControlledLut={isStrictVideoGallery}
                         shouldApplyLut={
-                          gallery.gallery_type === "video"
+                          isStrictVideoGallery
                             ? !!videoLutDisplay?.shouldApplyLut
                             : true
                         }
@@ -2843,10 +2944,10 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       <main
         id="gallery-content"
         className={`mx-auto max-w-6xl scroll-mt-4 px-4 sm:px-6 ${
-          gallery.gallery_type === "video" ? "py-5 sm:py-6" : "py-8"
+          isVideoLayoutGallery ? "py-5 sm:py-6" : "py-8"
         }`}
       >
-        {gallery.gallery_type === "video" ? (
+        {isVideoLayoutGallery ? (
           <div className="mx-auto mb-4 max-w-2xl text-center sm:mb-5">
             {!heroHasMediaBackdrop ? (
               <>
@@ -2862,8 +2963,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                     isDarkBg ? "text-white/85" : "text-neutral-500 dark:text-neutral-400"
                   }`}
                 >
-                  Video · {mediaMode === "raw" ? "RAW" : "Final"}
-                  {deliveryModeLabel ? ` · ${deliveryModeLabel}` : ""}
+                  {gallery.gallery_type === "mixed"
+                    ? `Mixed · Final${deliveryModeLabel ? ` · ${deliveryModeLabel}` : ""}`
+                    : `Video · ${mediaMode === "raw" ? "RAW" : "Final"}${
+                        deliveryModeLabel ? ` · ${deliveryModeLabel}` : ""
+                      }`}
                 </p>
                 {reviewInstrRaw ? (
                   reviewInstrCompact ? (
@@ -3181,7 +3285,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         {collections.length > 0 && (
           <div
             className={`flex flex-wrap items-center justify-center gap-2 ${
-              gallery.gallery_type === "video" ? "mb-4" : "mb-6"
+              isVideoLayoutGallery ? "mb-4" : "mb-6"
             }`}
           >
             <button
@@ -3445,11 +3549,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 lutPreviewEnabled={lutPreviewEnabled}
                 previewLutSource={clientLutSource}
                 lutGradeMixPercent={
-                  gallery.gallery_type === "video" ? 100 : lutGradeMix
+                  isStrictVideoGallery ? 100 : lutGradeMix
                 }
                 isFeaturedVideo={gallery.featured_video_asset_id === asset.id}
-                isVideoGallery={gallery.gallery_type === "video"}
-                galleryVideoControlledLut={gallery.gallery_type === "video"}
+                isVideoGallery={isVideoLayoutGallery}
+                galleryVideoControlledLut={isStrictVideoGallery}
                 galleryVideoShouldApplyLut={
                   videoLutDisplay?.shouldApplyLut ?? false
                 }
@@ -3473,7 +3577,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
             className="fixed right-6 top-1/2 z-40 flex w-48 -translate-y-1/2 flex-col gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
             role="complementary"
             aria-label={
-              gallery.gallery_type === "video" ? "Selects selection" : "Favorites selection"
+              gallery.gallery_type === "mixed"
+                ? "Photo and video selections"
+                : gallery.gallery_type === "video"
+                  ? "Selects selection"
+                  : "Favorites selection"
             }
           >
             <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
@@ -3501,7 +3609,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 onClick={() => setShowSaveFavorites(true)}
                 className="flex items-center justify-center rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
               >
-                {gallery.gallery_type === "video" ? "Save selects list" : "Save favorites list"}
+                {gallery.gallery_type === "mixed"
+                  ? "Save lists"
+                  : gallery.gallery_type === "video"
+                    ? "Save selects list"
+                    : "Save favorites list"}
               </button>
               <button
                 type="button"
@@ -3527,7 +3639,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           count={selectedFavorites.size}
           galleryId={galleryId}
           password={password || undefined}
-          listKind={gallery.gallery_type === "video" ? "selects" : "favorites"}
+          galleryType={galleryTypeForSaveModal}
+          saveSummary={mixedSelectionSummary}
           onSave={handleSaveFavorites}
           onClose={() => setShowSaveFavorites(false)}
         />
@@ -3565,7 +3678,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           onLutGradeMixChange={
             isVideo(previewAsset.name) ? undefined : setLutGradeMix
           }
-          galleryVideoControlledLut={gallery.gallery_type === "video"}
+          galleryVideoControlledLut={isStrictVideoGallery}
           galleryVideoShouldApplyLut={
             videoLutDisplay?.shouldApplyLut ?? false
           }

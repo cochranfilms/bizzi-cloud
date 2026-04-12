@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Check, Cloud, Folder } from "lucide-react";
+import { Cloud, Folder } from "lucide-react";
 import type { FolderItem } from "./FolderCard";
 import ItemActionsMenu from "./ItemActionsMenu";
 import ShareModal from "./ShareModal";
@@ -37,6 +37,7 @@ import type { FolderRollupCoverage } from "@/lib/metadata-display";
 import { buildFolderDisplayMetadata } from "@/lib/metadata-display";
 import StorageFolderCoverThumbnail from "@/components/dashboard/StorageFolderCoverThumbnail";
 import TransfersFolderImmersiveBackdrop from "@/components/dashboard/TransfersFolderImmersiveBackdrop";
+import { useDelayedSelectOrOpen } from "@/hooks/useDelayedSelectOrOpen";
 
 interface FolderListRowProps {
   item: FolderItem;
@@ -256,6 +257,13 @@ export default function FolderListRow({
     [isDropTarget, onItemsDropped, item.driveId, item.storageLinkedDriveId, item.storageFolderId]
   );
 
+  const rowInteractive = canNavigate || !!(selectable && onSelect);
+  const { onPointerAreaClick, onPointerAreaDoubleClick, onCardKeyDown } = useDelayedSelectOrOpen({
+    selectable: !!(selectable && onSelect),
+    onSelect,
+    onOpen: canNavigate ? onClick : undefined,
+  });
+
   return (
     <>
       <tr
@@ -267,45 +275,22 @@ export default function FolderListRow({
         onDragOver={isDropTarget ? handleDragOver : undefined}
         onDragLeave={isDropTarget ? handleDragLeave : undefined}
         onDrop={isDropTarget ? handleDrop : undefined}
-        role={canNavigate ? "button" : undefined}
-        tabIndex={canNavigate ? 0 : undefined}
-        onClick={canNavigate ? onClick : undefined}
-        onKeyDown={
-          canNavigate
-            ? (e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onClick?.();
-                }
-              }
-            : undefined
-        }
+        role={rowInteractive ? "button" : undefined}
+        tabIndex={rowInteractive ? 0 : undefined}
+        onClick={rowInteractive ? onPointerAreaClick : undefined}
+        onDoubleClick={selectable && onSelect ? onPointerAreaDoubleClick : undefined}
+        onKeyDown={rowInteractive ? onCardKeyDown : undefined}
         className={`border-b border-neutral-100 transition-colors last:border-0 ${revealOpacityClass} ${
-          canNavigate ? "cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" : ""
+          rowInteractive ? "cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" : ""
         } ${selected ? "bg-bizzi-blue/5 dark:bg-bizzi-blue/10" : ""} ${
           draggable ? "cursor-grab active:cursor-grabbing" : ""
         } ${
           isDragOver ? "bg-bizzi-blue/10 ring-1 ring-inset ring-bizzi-blue/40 dark:bg-bizzi-blue/15" : ""
         } ${rowExtraClassName}`.trim()}
       >
-        <td className="w-10 px-3 py-2">
-          {selectable && onSelect ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelect();
-              }}
-              className="flex h-6 w-6 items-center justify-center rounded border-2 border-neutral-300 dark:border-neutral-600"
-              aria-label={selected ? "Deselect" : "Select"}
-            >
-              {selected && <Check className="h-3.5 w-3.5 text-bizzi-blue" />}
-            </button>
-          ) : null}
-        </td>
         <td className="px-4 py-2">
           <div className="flex items-center gap-3">
-            <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
+            <div className="relative flex h-[3.25rem] w-[3.25rem] flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
               {isTransfersRoot ? (
                 <TransfersFolderImmersiveBackdrop imgClassName="rounded-lg" />
               ) : item.coverFile ? (
@@ -326,7 +311,7 @@ export default function FolderListRow({
                 </>
               ) : null}
               <Icon
-                className={`relative z-[2] h-7 w-7 drop-shadow ${
+                className={`relative z-[2] h-[1.9rem] w-[1.9rem] drop-shadow ${
                   isTransfersRoot || item.coverFile
                     ? "text-white dark:text-white"
                     : "text-neutral-600 dark:text-neutral-400"

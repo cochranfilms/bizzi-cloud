@@ -270,10 +270,22 @@ export async function PATCH(
     if (!isValidMediaMode(body.media_mode)) {
       return { status: 400 as const, error: "Invalid media_mode" };
     }
+    if (data.gallery_type === "mixed" && body.media_mode === "raw") {
+      return {
+        status: 400 as const,
+        error: "Mixed galleries are Final delivery only; RAW profile is not supported.",
+      };
+    }
     updates.media_mode = body.media_mode;
     updates.source_format = legacySourceFormatFromMediaMode(body.media_mode);
   } else if (body.source_format !== undefined) {
     const sf = body.source_format === "raw" ? "raw" : "jpg";
+    if (data.gallery_type === "mixed" && sf === "raw") {
+      return {
+        status: 400 as const,
+        error: "Mixed galleries are Final delivery only; RAW profile is not supported.",
+      };
+    }
     updates.source_format = sf;
     updates.media_mode = sf === "raw" ? "raw" : "final";
   }
@@ -338,7 +350,10 @@ export async function PATCH(
   if (result.status === 404) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
   if (result.status === 403) return NextResponse.json({ error: "Access denied" }, { status: 403 });
   if (result.status === 400) {
-    return NextResponse.json({ error: "Invalid media_mode" }, { status: 400 });
+    return NextResponse.json(
+      { error: "error" in result && result.error ? result.error : "Invalid request" },
+      { status: 400 }
+    );
   }
   if (result.status === 409) {
     return NextResponse.json(

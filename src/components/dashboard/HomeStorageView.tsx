@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
@@ -79,6 +79,74 @@ import {
 } from "@/lib/dnd-move-items";
 import { rectsIntersect } from "@/lib/utils";
 import { BulkActionBar } from "./BulkActionBar";
+import { useDelayedSelectOrOpen } from "@/hooks/useDelayedSelectOrOpen";
+
+function HomeBizziFolderStripeInner({
+  stripeSelectable,
+  onStripeSelect,
+  onOpenFolder,
+  shellClassName,
+  isDropTarget,
+  dropDriveId,
+  item,
+  handleDropOnFolder,
+  menu,
+  children,
+}: {
+  stripeSelectable: boolean;
+  onStripeSelect?: () => void;
+  onOpenFolder: () => void;
+  shellClassName: string;
+  isDropTarget: boolean;
+  dropDriveId: string;
+  item: FolderItem;
+  handleDropOnFolder: (target: FolderDropMoveTarget, e: DragEvent) => void | Promise<void>;
+  menu: ReactNode;
+  children: ReactNode;
+}) {
+  const { onPointerAreaClick, onPointerAreaDoubleClick, onCardKeyDown } = useDelayedSelectOrOpen({
+    selectable: stripeSelectable,
+    onSelect: onStripeSelect,
+    onOpen: onOpenFolder,
+  });
+  return (
+    <div
+      className={[shellClassName, "touch-manipulation cursor-pointer"].filter(Boolean).join(" ")}
+      role="button"
+      tabIndex={0}
+      onClick={onPointerAreaClick}
+      onDoubleClick={stripeSelectable ? onPointerAreaDoubleClick : undefined}
+      onKeyDown={onCardKeyDown}
+      onDragOver={
+        isDropTarget
+          ? (e) => {
+              if (!Array.from(e.dataTransfer.types).includes(DND_MOVE_MIME)) return;
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = "move";
+            }
+          : undefined
+      }
+      onDrop={
+        isDropTarget
+          ? (e) => {
+              if (!dropDriveId) return;
+              e.preventDefault();
+              e.stopPropagation();
+              const target: FolderDropMoveTarget = {
+                driveId: dropDriveId,
+                ...(item.storageFolderId ? { storageFolderId: item.storageFolderId } : {}),
+              };
+              void handleDropOnFolder(target, e);
+            }
+          : undefined
+      }
+    >
+      {children}
+      {menu}
+    </div>
+  );
+}
 
 const HomeEmbeddedStorageGrid = dynamic(
   () =>
@@ -1384,7 +1452,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                    <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
@@ -1506,6 +1573,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                             : undefined
                         }
                         onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                        onMacosPackageNavigate={isPkg ? () => navigateIntoMacosPackage(file) : undefined}
                         selectable
                         selected={selectedFileIds.has(file.id)}
                         onSelect={() => toggleFileSelection(file.id)}
@@ -1600,8 +1668,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                             .join(" ") || undefined
                         }
                       >
-                        <div
-                          className={[
+                        <HomeBizziFolderStripeInner
+                          stripeSelectable={!!drive && !item.preventDelete}
+                          onStripeSelect={() => toggleFolderSelection(item.key)}
+                          onOpenFolder={() => openFolderFromPin(item)}
+                          shellClassName={[
                             "group relative flex min-h-[2.25rem] items-center gap-2 rounded-lg border px-2 py-1 pr-8 transition-colors",
                             "border-neutral-200/90 bg-white/95 dark:border-neutral-700 dark:bg-neutral-900/85",
                             selectedFolderKeys.has(item.key)
@@ -1611,73 +1682,33 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                           ]
                             .filter(Boolean)
                             .join(" ")}
-                          onDragOver={
-                            isDropTarget
-                              ? (e) => {
-                                  if (!Array.from(e.dataTransfer.types).includes(DND_MOVE_MIME)) return;
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  e.dataTransfer.dropEffect = "move";
-                                }
-                              : undefined
-                          }
-                          onDrop={
-                            isDropTarget
-                              ? (e) => {
-                                  if (!dropDriveId) return;
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  const target: FolderDropMoveTarget = {
-                                    driveId: dropDriveId,
-                                    ...(item.storageFolderId ? { storageFolderId: item.storageFolderId } : {}),
-                                  };
-                                  void handleDropOnFolder(target, e);
-                                }
-                              : undefined
+                          isDropTarget={isDropTarget}
+                          dropDriveId={dropDriveId}
+                          item={item}
+                          handleDropOnFolder={handleDropOnFolder}
+                          menu={
+                            menuActions.length > 0 ? (
+                              <div className="absolute right-1 top-1/2 z-10 -translate-y-1/2">
+                                <ItemActionsMenu actions={menuActions} alignRight ariaLabel={`Actions for ${item.name}`} />
+                              </div>
+                            ) : null
                           }
                         >
-                          {!!drive && !item.preventDelete ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleFolderSelection(item.key);
-                              }}
-                              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${
-                                selectedFolderKeys.has(item.key)
-                                  ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-cyan dark:bg-bizzi-cyan"
-                                  : "border-neutral-300 bg-transparent dark:border-neutral-600"
-                              }`}
-                              aria-label={selectedFolderKeys.has(item.key) ? "Deselect" : "Select"}
-                              aria-pressed={selectedFolderKeys.has(item.key)}
-                            >
-                              {selectedFolderKeys.has(item.key) ? (
-                                <Check className="h-3 w-3 text-white stroke-[3]" />
-                              ) : null}
-                            </button>
-                          ) : null}
                           <Folder
                             className="h-4 w-4 shrink-0 text-bizzi-blue dark:text-bizzi-cyan"
                             strokeWidth={2}
                             aria-hidden
                           />
-                          <button
-                            type="button"
-                            onClick={() => openFolderFromPin(item)}
+                          <span
                             className="min-w-0 flex-1 truncate text-left text-sm font-medium text-neutral-900 dark:text-white"
                             title={item.name}
                           >
                             {item.name}
-                          </button>
+                          </span>
                           <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
                             Pinned
                           </span>
-                          {menuActions.length > 0 ? (
-                            <div className="absolute right-1 top-1/2 z-10 -translate-y-1/2">
-                              <ItemActionsMenu actions={menuActions} alignRight ariaLabel={`Actions for ${item.name}`} />
-                            </div>
-                          ) : null}
-                        </div>
+                        </HomeBizziFolderStripeInner>
                       </div>
                     );
                   })}
@@ -1766,8 +1797,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                             .join(" ") || undefined
                         }
                       >
-                        <div
-                          className={[
+                        <HomeBizziFolderStripeInner
+                          stripeSelectable={!!drive && (!item.preventDelete || !!item.virtualFolder)}
+                          onStripeSelect={() => toggleFolderSelection(item.key)}
+                          onOpenFolder={() => openBizziCloudFolderItem(item)}
+                          shellClassName={[
                             "group relative flex min-h-[2.25rem] items-center gap-2 rounded-lg border px-2 py-1 pr-8 transition-colors",
                             "border-neutral-200/90 bg-white/95 dark:border-neutral-700 dark:bg-neutral-900/85",
                             selectedFolderKeys.has(item.key)
@@ -1777,70 +1811,30 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                           ]
                             .filter(Boolean)
                             .join(" ")}
-                          onDragOver={
-                            isDropTarget
-                              ? (e) => {
-                                  if (!Array.from(e.dataTransfer.types).includes(DND_MOVE_MIME)) return;
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  e.dataTransfer.dropEffect = "move";
-                                }
-                              : undefined
-                          }
-                          onDrop={
-                            isDropTarget
-                              ? (e) => {
-                                  if (!dropDriveId) return;
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  const target: FolderDropMoveTarget = {
-                                    driveId: dropDriveId,
-                                    ...(item.storageFolderId ? { storageFolderId: item.storageFolderId } : {}),
-                                  };
-                                  void handleDropOnFolder(target, e);
-                                }
-                              : undefined
+                          isDropTarget={isDropTarget}
+                          dropDriveId={dropDriveId}
+                          item={item}
+                          handleDropOnFolder={handleDropOnFolder}
+                          menu={
+                            menuActions.length > 0 ? (
+                              <div className="absolute right-1 top-1/2 z-10 -translate-y-1/2">
+                                <ItemActionsMenu actions={menuActions} alignRight ariaLabel={`Actions for ${item.name}`} />
+                              </div>
+                            ) : null
                           }
                         >
-                          {!!drive && (!item.preventDelete || !!item.virtualFolder) ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleFolderSelection(item.key);
-                              }}
-                              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${
-                                selectedFolderKeys.has(item.key)
-                                  ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-cyan dark:bg-bizzi-cyan"
-                                  : "border-neutral-300 bg-transparent dark:border-neutral-600"
-                              }`}
-                              aria-label={selectedFolderKeys.has(item.key) ? "Deselect" : "Select"}
-                              aria-pressed={selectedFolderKeys.has(item.key)}
-                            >
-                              {selectedFolderKeys.has(item.key) ? (
-                                <Check className="h-3 w-3 text-white stroke-[3]" />
-                              ) : null}
-                            </button>
-                          ) : null}
                           <Folder
                             className="h-4 w-4 shrink-0 text-bizzi-blue dark:text-bizzi-cyan"
                             strokeWidth={2}
                             aria-hidden
                           />
-                          <button
-                            type="button"
-                            onClick={() => openBizziCloudFolderItem(item)}
+                          <span
                             className="min-w-0 flex-1 truncate text-left text-sm font-medium text-neutral-900 dark:text-white"
                             title={item.name}
                           >
                             {item.name}
-                          </button>
-                          {menuActions.length > 0 ? (
-                            <div className="absolute right-1 top-1/2 z-10 -translate-y-1/2">
-                              <ItemActionsMenu actions={menuActions} alignRight ariaLabel={`Actions for ${item.name}`} />
-                            </div>
-                          ) : null}
-                        </div>
+                          </span>
+                        </HomeBizziFolderStripeInner>
                       </div>
                     );
                   })}

@@ -6,7 +6,7 @@ import type {
   ShellContext,
   SubmissionSource,
 } from "@/lib/gallery-proofing-types";
-import { proofingRootSegmentFromGalleryType } from "@/lib/gallery-proofing-types";
+import { proofingRootSegmentFromListType } from "@/lib/gallery-proofing-types";
 import { assignProofingFolderSlug } from "@/lib/gallery-proofing-slug";
 import type { MaterializationState } from "@/lib/gallery-proofing-types";
 import { buildMaterializedListPrefix } from "@/lib/gallery-media-path";
@@ -33,7 +33,6 @@ export function buildNewProofingListFields(input: {
   mediaFolderSegment: string;
   /** Deterministic client subfolder (see allocateClientFolderSegment). */
   clientFolderSegment: string;
-  galleryType: "photo" | "video" | undefined | null;
   listType: ProofingListType;
   title: string | null | undefined;
   shellContext: ShellContext;
@@ -43,15 +42,15 @@ export function buildNewProofingListFields(input: {
   personalTeamOwnerId: string | null;
   now: Date;
 }): Record<string, unknown> {
-  const proofing_root_segment: ProofingRootSegment = proofingRootSegmentFromGalleryType(
-    input.galleryType
+  const proofing_root_segment: ProofingRootSegment = proofingRootSegmentFromListType(
+    input.listType
   );
   const folder_slug = assignProofingFolderSlug({
     title: input.title,
     listDocId: input.listDocId,
     clientName: input.clientName,
   });
-  const galleryKind = input.galleryType === "video" ? "video" : "photo";
+  const galleryKind = input.listType === "video_selects" ? "video" : "photo";
   const materialized_relative_prefix = buildMaterializedListPrefix({
     mediaFolderSegment: input.mediaFolderSegment,
     galleryKind,

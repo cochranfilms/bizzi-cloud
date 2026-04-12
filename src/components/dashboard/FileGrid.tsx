@@ -178,7 +178,7 @@ export default function FileGrid({
           ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
           : "sm:grid-cols-3 md:grid-cols-4";
   const gridGapClass = viewMode === "thumbnail" ? "gap-3" : "gap-4";
-  const listColSpan = 10;
+  const listColSpan = 9;
   const [activeTab, setActiveTab] = useState<"recents" | "hearts">("recents");
   const [filesLandingTab, setFilesLandingTab] = useState<"recents" | "hearts" | "storage">(
     "storage"
@@ -2822,7 +2822,6 @@ export default function FileGrid({
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                    <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
@@ -3159,7 +3158,6 @@ export default function FileGrid({
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                      <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
@@ -3268,6 +3266,9 @@ export default function FileGrid({
                               : undefined
                           }
                           onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                          onMacosPackageNavigate={
+                            isPkg ? () => navigateIntoMacosPackage(file) : undefined
+                          }
                         />
                       );
                     })}
@@ -3505,7 +3506,6 @@ export default function FileGrid({
                     <table className="w-full text-left text-sm">
                       <thead>
                         <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                          <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
@@ -3639,7 +3639,6 @@ export default function FileGrid({
                     <table className="w-full text-left text-sm">
                       <thead>
                         <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                          <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
@@ -3791,7 +3790,6 @@ export default function FileGrid({
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                      <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>

@@ -84,7 +84,6 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>

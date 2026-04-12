@@ -2,10 +2,10 @@
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDelayedSelectOrOpen } from "@/hooks/useDelayedSelectOrOpen";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Archive,
-  Check,
   ChevronLeft,
   FileIcon,
   Film,
@@ -53,13 +53,11 @@ export type TrashPageVariant = "dashboard" | "enterprise";
 const ACCENT = {
   dashboard: {
     card: "border-bizzi-blue ring-2 ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10",
-    checkbox: "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-blue",
     folderIcon: "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20",
     dragRect: "border-bizzi-blue bg-bizzi-blue/20 shadow-lg shadow-bizzi-blue/30",
   },
   enterprise: {
     card: "border-[var(--enterprise-primary)] ring-2 ring-[var(--enterprise-primary)]/50 bg-[var(--enterprise-primary)]/5",
-    checkbox: "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]",
     folderIcon: "bg-[var(--enterprise-primary)]/10 text-[var(--enterprise-primary)]",
     dragRect: "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/20 shadow-lg shadow-[var(--enterprise-primary)]/30",
   },
@@ -93,45 +91,26 @@ function DeletedFolderCard({
   onOpenFolder?: () => void;
 }) {
   const a = ACCENT[accent];
+  const { onPointerAreaClick, onPointerAreaDoubleClick, onCardKeyDown } = useDelayedSelectOrOpen({
+    selectable: !!onSelect,
+    onSelect,
+    onOpen: onOpenFolder,
+  });
+  const interactive = !!onSelect || !!onOpenFolder;
   return (
     <div
-      role={onOpenFolder ? "button" : undefined}
-      tabIndex={onOpenFolder ? 0 : undefined}
-      onKeyDown={
-        onOpenFolder
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onOpenFolder();
-              }
-            }
-          : undefined
-      }
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onKeyDown={interactive ? onCardKeyDown : undefined}
       onClick={(e) => {
-        if (!onOpenFolder) return;
         if ((e.target as HTMLElement).closest("button")) return;
-        onOpenFolder();
+        onPointerAreaClick();
       }}
+      onDoubleClick={onSelect ? onPointerAreaDoubleClick : undefined}
       className={`group relative flex flex-col items-center rounded-xl border p-6 transition-colors ${
         selected ? a.card : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
-      }${onOpenFolder ? " cursor-pointer" : ""}`}
+      }${interactive ? " cursor-pointer" : ""}`}
     >
-      {onSelect && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect();
-          }}
-          className={`absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border-2 transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-700 ${
-            selected ? a.checkbox : "border-neutral-300 bg-transparent dark:border-neutral-600"
-          }`}
-          aria-label={selected ? "Deselect" : "Select"}
-          aria-pressed={selected}
-        >
-          {selected && <Check className="h-3.5 w-3.5 text-white stroke-[3]" />}
-        </button>
-      )}
       <div className="absolute right-2 top-2 z-10 opacity-0 transition-opacity group-hover:opacity-100">
         <ItemActionsMenu
           actions={[
@@ -216,30 +195,27 @@ function DeletedFileCard({
   const creativeThumb = resolveCreativeProjectTile(recentFileToCreativeThumbnailSource(file));
   const aspectClass = getCardAspectClass("landscape");
   const objectFit = "object-contain";
+  const { onPointerAreaClick, onPointerAreaDoubleClick, onCardKeyDown } = useDelayedSelectOrOpen({
+    selectable: !!onSelect,
+    onSelect,
+    onOpen: undefined,
+  });
 
   return (
     <div
       ref={cardRef}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onKeyDown={onSelect ? onCardKeyDown : undefined}
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("button")) return;
+        onPointerAreaClick();
+      }}
+      onDoubleClick={onSelect ? onPointerAreaDoubleClick : undefined}
       className={`group relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border transition-colors ${
         selected ? a.card : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
-      }`}
+      }${onSelect ? " cursor-pointer" : ""}`}
     >
-      {onSelect && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect();
-          }}
-          className={`absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border-2 transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-700 ${
-            selected ? a.checkbox : "border-neutral-300 bg-transparent dark:border-neutral-600"
-          }`}
-          aria-label={selected ? "Deselect" : "Select"}
-          aria-pressed={selected}
-        >
-          {selected && <Check className="h-3.5 w-3.5 text-white stroke-[3]" />}
-        </button>
-      )}
       <div className="absolute right-2 top-2 z-10 opacity-0 transition-opacity group-hover:opacity-100">
         <ItemActionsMenu
           actions={[

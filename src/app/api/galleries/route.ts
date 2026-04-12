@@ -141,7 +141,12 @@ export async function GET(request: Request) {
   const galleries = snap.docs.map((d) => {
     const data = d.data();
     const cover = coverMap[d.id] ?? null;
-    const galleryType = data.gallery_type === "video" ? "video" : "photo";
+    const galleryType =
+      data.gallery_type === "video"
+        ? "video"
+        : data.gallery_type === "mixed"
+          ? "mixed"
+          : "photo";
     const mediaMode = normalizeGalleryMediaMode({
       media_mode: data.media_mode as string | null | undefined,
       source_format: data.source_format as string | null | undefined,
@@ -218,12 +223,16 @@ export async function POST(request: Request) {
     workflow_status,
   } = body;
 
-  const galleryType = rawGalleryType === "video" ? "video" : "photo";
+  const galleryType =
+    rawGalleryType === "video" ? "video" : rawGalleryType === "mixed" ? "mixed" : "photo";
 
-  const resolvedMediaMode = resolveMediaModeFromCreateBody({
-    media_mode: mediaModeBody ?? null,
-    source_format: source_format as string | null,
-  });
+  const resolvedMediaMode =
+    galleryType === "mixed"
+      ? "final"
+      : resolveMediaModeFromCreateBody({
+          media_mode: mediaModeBody ?? null,
+          source_format: source_format as string | null,
+        });
   const legacySource = legacySourceFormatFromMediaMode(resolvedMediaMode);
 
   if (!title || typeof title !== "string" || title.trim().length === 0) {
@@ -332,7 +341,7 @@ export async function POST(request: Request) {
   );
 
   const videoSettings =
-    galleryType === "video"
+    galleryType === "video" || galleryType === "mixed"
       ? {
           ...DEFAULT_VIDEO_GALLERY_SETTINGS,
           delivery_mode: delivery_mode ?? DEFAULT_VIDEO_GALLERY_SETTINGS.delivery_mode,

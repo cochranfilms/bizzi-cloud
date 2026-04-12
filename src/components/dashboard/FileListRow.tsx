@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Image from "next/image";
-import { Archive, Check, Download, FileIcon, Film, FolderInput, Info } from "lucide-react";
+import { Archive, Download, FileIcon, Film, FolderInput, Info } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import type { DisplayContext } from "@/lib/metadata-display";
 import { buildDisplayMetadata, classifyFileKind } from "@/lib/metadata-display";
@@ -32,6 +32,7 @@ import {
   resolveCreativeProjectTile,
 } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
+import { useDelayedSelectOrOpen } from "@/hooks/useDelayedSelectOrOpen";
 
 function isPdfFile(name: string) {
   return /\.pdf$/i.test(name);
@@ -50,6 +51,8 @@ interface FileListRowProps {
   /** macOS package (.fcpbundle) row: download full ZIP restore */
   onDownloadPackage?: () => void;
   onPackageInfo?: () => void;
+  /** macOS package: open folder to package root (double-click when not using row selection). */
+  onMacosPackageNavigate?: () => void;
   /** Workspace / route hints for Location column */
   displayContext?: DisplayContext;
   /** Projects list: hide resolution, duration, codec columns */
@@ -69,6 +72,7 @@ export default function FileListRow({
   onDragStart,
   onDownloadPackage,
   onPackageInfo,
+  onMacosPackageNavigate,
   displayContext,
   columnMode = "full",
   rowBadge,
@@ -145,6 +149,24 @@ export default function FileListRow({
     if (ok) onDelete?.();
   };
 
+  const previewOpen = useCallback(() => {
+    (onPackageInfo ?? onClick)?.();
+  }, [onPackageInfo, onClick]);
+  const doubleClickOpen = useCallback(() => {
+    if (isMacosPackage && onMacosPackageNavigate) {
+      onMacosPackageNavigate();
+      return;
+    }
+    (onPackageInfo ?? onClick)?.();
+  }, [isMacosPackage, onMacosPackageNavigate, onPackageInfo, onClick]);
+  const { onPointerAreaClick, onPointerAreaDoubleClick, onCardKeyDown } = useDelayedSelectOrOpen({
+    selectable: !!(selectable && onSelect && !blockPreviewFromShell),
+    onSelect,
+    onOpen: doubleClickOpen,
+  });
+  const rowInteractive =
+    (canPreview && !blockPreviewFromShell) || !!(selectable && onSelect && !blockPreviewFromShell);
+
   return (
     <>
       <tr
@@ -153,45 +175,55 @@ export default function FileListRow({
         data-item-id={file.id}
         draggable={draggable && !isMacosPackage}
         onDragStart={onDragStart}
-        role={canPreview && !blockPreviewFromShell ? "button" : undefined}
-        tabIndex={canPreview && !blockPreviewFromShell ? 0 : undefined}
-        onClick={canPreview && !blockPreviewFromShell ? (onPackageInfo ?? onClick) : undefined}
+        role={rowInteractive ? "button" : undefined}
+        tabIndex={rowInteractive ? 0 : undefined}
+        onClick={
+          !blockPreviewFromShell
+            ? selectable && onSelect
+              ? onPointerAreaClick
+              : canPreview
+                ? previewOpen
+                : undefined
+            : undefined
+        }
+        onDoubleClick={
+          !blockPreviewFromShell
+            ? selectable && onSelect
+              ? onPointerAreaDoubleClick
+              : isMacosPackage && onMacosPackageNavigate
+                ? (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onMacosPackageNavigate();
+                  }
+                : undefined
+            : undefined
+        }
         onKeyDown={
-          canPreview && !blockPreviewFromShell
-            ? (e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  (onPackageInfo ?? onClick)?.();
-                }
-              }
+          !blockPreviewFromShell
+            ? selectable && onSelect
+              ? onCardKeyDown
+              : canPreview
+                ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      previewOpen();
+                    }
+                  }
+                : undefined
             : undefined
         }
         className={`border-b border-neutral-100 transition-colors last:border-0 ${
-          canPreview && !blockPreviewFromShell
+          rowInteractive
             ? "cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
             : ""
         } ${selected ? "bg-bizzi-blue/5 dark:bg-bizzi-blue/10" : ""} ${
           draggable && !isMacosPackage ? "cursor-grab active:cursor-grabbing" : ""
         }`}
       >
-        <td className="w-10 px-3 py-2">
-          {selectable && onSelect ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelect();
-              }}
-              className="flex h-6 w-6 items-center justify-center rounded border-2 border-neutral-300 dark:border-neutral-600"
-              aria-label={selected ? "Deselect" : "Select"}
-            >
-              {selected && <Check className="h-3.5 w-3.5 text-bizzi-blue" />}
-            </button>
-          ) : null}
-        </td>
         <td className="px-4 py-2">
           <div className="flex items-center gap-3">
-            <div className="relative flex h-10 w-10 flex-shrink-0 overflow-hidden rounded bg-neutral-100 dark:bg-neutral-800">
+            <div className="relative flex h-11 w-11 flex-shrink-0 overflow-hidden rounded bg-neutral-100 dark:bg-neutral-800">
               {isMacosPackage ? (
                 creativeThumb.mode === "branded_project" ? (
                   <BrandedProjectTile
@@ -219,8 +251,8 @@ export default function FileListRow({
                 <Image
                   src={videoThumbnailUrl ?? pdfThumbnailUrl ?? thumbnailUrl ?? ""}
                   alt=""
-                  width={40}
-                  height={40}
+                  width={44}
+                  height={44}
                   className="h-full w-full object-cover"
                   unoptimized
                 />

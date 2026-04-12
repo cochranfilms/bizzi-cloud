@@ -143,6 +143,35 @@ function TypeSelectionStep({
           </div>
         </button>
       </div>
+      <div className="flex justify-center pt-1">
+        <button
+          type="button"
+          onClick={() => onSelect("mixed")}
+          className={`flex w-full max-w-md flex-col items-start gap-3 rounded-xl border-2 p-5 text-left transition-all sm:max-w-lg ${
+            selectedType === "mixed"
+              ? "border-bizzi-blue bg-bizzi-blue/5 dark:border-bizzi-cyan dark:bg-bizzi-cyan/10"
+              : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
+          }`}
+        >
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-teal-100 dark:bg-teal-900/30">
+            <div className="flex items-center gap-1">
+              <ImageIcon className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              <Film className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+            </div>
+          </div>
+          <div>
+            <h4 className="font-semibold text-neutral-900 dark:text-white">Mixed Gallery</h4>
+            <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+              Final delivery only — upload edited photos and finished videos in one place. Clients get photo proofing and
+              video review in a single gallery; previews automatically match whether the cover is a still or a clip. No
+              RAW or LUT workflows (use dedicated RAW galleries for source files).
+            </p>
+            <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-500">
+              Best for: full wedding delivery, hybrid photo + film packages, single-link client handoff
+            </p>
+          </div>
+        </button>
+      </div>
       <div className="flex justify-end pt-2">
         <button
           type="button"
@@ -209,17 +238,29 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
               invoice_label: invoiceLabel.trim() || undefined,
               invoice_required_for_download: invoiceRequiredForDownload,
             }
-          : {
-              media_mode: mediaMode,
-              delivery_mode: deliveryMode,
-              download_policy: downloadPolicy,
-              allow_comments: allowComments,
-              allow_favorites: allowFavorites,
-              invoice_url: invoiceUrl.trim() || undefined,
-              invoice_label: invoiceLabel.trim() || undefined,
-              invoice_required_for_download: invoiceRequiredForDownload,
-              client_review_instructions: clientReviewInstructions.trim() || undefined,
-            };
+          : galleryType === "mixed"
+            ? {
+                media_mode: "final",
+                delivery_mode: deliveryMode,
+                download_policy: downloadPolicy,
+                allow_comments: allowComments,
+                allow_favorites: allowFavorites,
+                invoice_url: invoiceUrl.trim() || undefined,
+                invoice_label: invoiceLabel.trim() || undefined,
+                invoice_required_for_download: invoiceRequiredForDownload,
+                client_review_instructions: clientReviewInstructions.trim() || undefined,
+              }
+            : {
+                media_mode: mediaMode,
+                delivery_mode: deliveryMode,
+                download_policy: downloadPolicy,
+                allow_comments: allowComments,
+                allow_favorites: allowFavorites,
+                invoice_url: invoiceUrl.trim() || undefined,
+                invoice_label: invoiceLabel.trim() || undefined,
+                invoice_required_for_download: invoiceRequiredForDownload,
+                client_review_instructions: clientReviewInstructions.trim() || undefined,
+              };
       await onCreate({ ...base, ...photoExtras } as Parameters<typeof onCreate>[0]);
       onClose();
     } catch (err) {
@@ -280,7 +321,11 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
                 ←
               </button>
               <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
-                {galleryType === "video" ? "New video gallery" : "New photo gallery"}
+                {galleryType === "video"
+                  ? "New video gallery"
+                  : galleryType === "mixed"
+                    ? "New mixed gallery"
+                    : "New photo gallery"}
               </h2>
             </div>
             <button
@@ -313,7 +358,9 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
                 placeholder={
                   galleryType === "video"
                     ? "e.g. Smith Wedding Film 2024"
-                    : "e.g. Smith Wedding 2024"
+                    : galleryType === "mixed"
+                      ? "e.g. Smith Wedding — Photo & Film 2024"
+                      : "e.g. Smith Wedding 2024"
                 }
                 className="w-full rounded-lg border border-neutral-200 px-4 py-2 text-neutral-900 placeholder-neutral-400 outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                 required
@@ -537,7 +584,19 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
               </div>
             )}
 
-            {galleryType === "video" && (
+            {galleryType === "mixed" && (
+              <div className="rounded-xl border border-teal-200 bg-teal-50/80 px-4 py-3 dark:border-teal-800 dark:bg-teal-950/30">
+                <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                  Mixed Final Delivery
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+                  Always Final delivery — edited photos and finished videos together. No RAW or LUT tools; use dedicated
+                  RAW galleries if you need source review workflows.
+                </p>
+              </div>
+            )}
+
+            {(galleryType === "video" || galleryType === "mixed") && (
               <>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
@@ -616,7 +675,7 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
               </>
             )}
 
-            {(galleryType === "photo" || galleryType === "video") && (
+            {(galleryType === "photo" || galleryType === "video" || galleryType === "mixed") && (
               <div className="space-y-4">
                 <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
                   Invoicing (optional)
@@ -659,7 +718,7 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
               </div>
             )}
 
-            {galleryType === "video" && (
+            {(galleryType === "video" || galleryType === "mixed") && (
               <div>
                 <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
                   Client review instructions (optional)

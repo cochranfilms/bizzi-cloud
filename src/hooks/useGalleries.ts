@@ -6,7 +6,7 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 
 export interface GalleryListItem {
   id: string;
-  gallery_type: "photo" | "video";
+  gallery_type: "photo" | "video" | "mixed";
   /** final = delivery-ready; raw = source / LUT review */
   media_mode?: "final" | "raw";
   title: string;
@@ -79,7 +79,7 @@ export function useGalleries(options?: { basePath?: string }) {
 
   const createGallery = useCallback(
     async (input: {
-      gallery_type: "photo" | "video";
+      gallery_type: "photo" | "video" | "mixed";
       organization_id?: string | null;
       title: string;
       description?: string | null;

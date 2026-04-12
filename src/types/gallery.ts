@@ -81,8 +81,8 @@ export interface GalleryLUTSettings {
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "./creative-lut";
 export type { CreativeLUTConfig, CreativeLUTLibraryEntry };
 
-/** Gallery type: photo for photographers, video for videographers */
-export type GalleryType = "photo" | "video";
+/** Gallery type: photo, video, or mixed (final delivery photos + videos — no RAW/LUT workflows). */
+export type GalleryType = "photo" | "video" | "mixed";
 
 /**
  * Delivery profile: Final = edited / preview-friendly delivery; RAW = source camera or log-style review (LUT, etc.).

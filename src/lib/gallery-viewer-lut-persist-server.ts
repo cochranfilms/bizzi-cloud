@@ -7,7 +7,7 @@ import type { GalleryViewerLutPreferences } from "@/types/gallery-viewer-lut";
 
 export function buildValidViewerLutIdSet(
   creativeLibrary: Array<{ id?: string }>,
-  galleryType: "photo" | "video"
+  galleryType: "photo" | "video" | "mixed"
 ): Set<string> {
   const s = new Set<string>([GALLERY_LUT_ORIGINAL_ID]);
   if (galleryType === "video") {

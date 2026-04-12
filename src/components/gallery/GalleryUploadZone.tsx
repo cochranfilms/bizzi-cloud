@@ -10,7 +10,11 @@ import {
   isGalleryVideo,
 } from "@/lib/gallery-file-types";
 import { classifyGalleryFilename } from "@/lib/gallery-media-classification";
-import { galleryUploadHelperPhoto, galleryUploadHelperVideo } from "@/lib/gallery-profile-copy";
+import {
+  galleryUploadHelperMixed,
+  galleryUploadHelperPhoto,
+  galleryUploadHelperVideo,
+} from "@/lib/gallery-profile-copy";
 import { resolveMediaFolderSegmentForPath } from "@/lib/gallery-media-path";
 import type { GalleryManageUploadLifecycleEvent } from "@/lib/gallery-manage-upload-lifecycle";
 
@@ -27,7 +31,7 @@ interface GalleryUploadZoneProps {
   /** From gallery profile — drives upload hints */
   mediaMode?: "final" | "raw";
   /** Restrict drop/browse to images vs videos (matches gallery_type) */
-  galleryType?: "photo" | "video";
+  galleryType?: "photo" | "video" | "mixed";
 }
 
 export default function GalleryUploadZone({
@@ -105,6 +109,8 @@ export default function GalleryUploadZone({
       const ext = f.name.toLowerCase().split(".").pop();
       if (!ext || !GALLERY_UPLOAD_EXT_SET.has(ext)) return false;
       if (galleryType === "photo") return isGalleryImage(f.name) && !isGalleryVideo(f.name);
+      if (galleryType === "mixed")
+        return (isGalleryImage(f.name) && !isGalleryVideo(f.name)) || isGalleryVideo(f.name);
       return isGalleryVideo(f.name);
     });
     if (accepted.length === 0) return;
@@ -139,16 +145,22 @@ export default function GalleryUploadZone({
   const primaryLine =
     galleryType === "video"
       ? "Drop videos here, or click to browse"
-      : "Drop photos here, or click to browse";
+      : galleryType === "mixed"
+        ? "Drop photos or videos here, or click to browse"
+        : "Drop photos here, or click to browse";
   const formatsLine =
     galleryType === "video"
       ? "MP4, MOV, WebM, M4V, AVI, MKV, and other supported video formats"
-      : "JPEG, PNG, GIF, WebP, RAW (ARW, CR2, CR3, NEF, DNG, etc.)";
+      : galleryType === "mixed"
+        ? "Photos (JPEG, PNG, WebP, etc.) and videos (MP4, MOV, WebM, …)"
+        : "JPEG, PNG, GIF, WebP, RAW (ARW, CR2, CR3, NEF, DNG, etc.)";
 
   const persistentHelper =
     galleryType === "video"
       ? galleryUploadHelperVideo(mediaMode)
-      : galleryUploadHelperPhoto(mediaMode);
+      : galleryType === "mixed"
+        ? galleryUploadHelperMixed()
+        : galleryUploadHelperPhoto(mediaMode);
 
   return (
     <div className="space-y-4">

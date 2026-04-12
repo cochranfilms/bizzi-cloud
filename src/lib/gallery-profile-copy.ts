@@ -3,9 +3,12 @@
  */
 
 export type GalleryProfileMediaMode = "final" | "raw";
-export type GalleryProfileKind = "photo" | "video";
+export type GalleryProfileKind = "photo" | "video" | "mixed";
 
 export function galleryProfileTitle(kind: GalleryProfileKind, mode: GalleryProfileMediaMode): string {
+  if (kind === "mixed") {
+    return "Mixed Final Delivery Gallery";
+  }
   if (kind === "video") {
     return mode === "raw" ? "RAW Video Gallery" : "Final Video Gallery";
   }
@@ -16,6 +19,9 @@ export function galleryProfileDetailDescription(
   kind: GalleryProfileKind,
   mode: GalleryProfileMediaMode,
 ): string {
+  if (kind === "mixed") {
+    return "Final delivery only — upload edited photos and finished videos together. Clients get the same proofing, playback, and download behavior as your standalone photo and video delivery galleries, without RAW or LUT review tools.";
+  }
   if (kind === "video") {
     return mode === "raw"
       ? "Original camera or log-style footage; on-screen LUT preview may help during review when enabled. If you switch this gallery to Final Delivery, source video files you uploaded here are archived into a folder named RAW inside this gallery’s folder in Gallery Media — nothing is permanently deleted."
@@ -38,4 +44,9 @@ export function galleryUploadHelperVideo(mode: GalleryProfileMediaMode): string 
   return mode === "raw"
     ? "Best for source or log-style footage where LUT preview during review can help. Export-ready files are fine too."
     : "Best for edited, delivery-ready video files — best for client viewing and downloads when enabled.";
+}
+
+/** Mixed galleries: final delivery photos and videos only (no RAW/LUT workflows). */
+export function galleryUploadHelperMixed(): string {
+  return "Final delivery photos and edited videos together — same client experience as your Final photo and Final video galleries. Camera RAW and log/RAW video workflows belong in dedicated RAW galleries.";
 }

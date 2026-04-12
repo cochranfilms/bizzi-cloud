@@ -27,6 +27,11 @@ interface VideoScrubThumbnailProps {
    * When false, horizontal hover scrub is disabled so the short loop keeps playing (e.g. public video gallery).
    */
   scrubEnabled?: boolean;
+  /**
+   * When true, load the stream while the tile is visible (e.g. grid in-view) so the decoded frame can
+   * replace a letterboxed poster without waiting for hover.
+   */
+  eagerLoadStream?: boolean;
 }
 
 /**
@@ -41,6 +46,7 @@ export default function VideoScrubThumbnail({
   objectFit = "object-cover",
   loopSeconds = DEFAULT_LOOP_SECONDS,
   scrubEnabled = true,
+  eagerLoadStream = false,
 }: VideoScrubThumbnailProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [streamLoadFailed, setStreamLoadFailed] = useState(false);
@@ -78,23 +84,39 @@ export default function VideoScrubThumbnail({
     }, SCRUB_IDLE_MS);
   }, [clearScrubIdleTimer]);
 
+  const ensureStream = useCallback(() => {
+    if (streamUrl || isFetching) return;
+    setIsFetching(true);
+    fetchStreamUrl()
+      .then((url) => {
+        if (url) {
+          setStreamUrl(url);
+          setStreamLoadFailed(false);
+        }
+      })
+      .finally(() => setIsFetching(false));
+  }, [streamUrl, isFetching, fetchStreamUrl]);
+
+  useEffect(() => {
+    if (!eagerLoadStream || streamUrl || isFetching) return;
+    setIsFetching(true);
+    fetchStreamUrl()
+      .then((url) => {
+        if (url) {
+          setStreamUrl(url);
+          setStreamLoadFailed(false);
+        }
+      })
+      .finally(() => setIsFetching(false));
+  }, [eagerLoadStream, streamUrl, isFetching, fetchStreamUrl]);
+
   const handleMouseEnter = useCallback(() => {
     setIsHovering(true);
     setIsScrubbing(false);
     setScrubPosition(null);
     clearScrubIdleTimer();
-    if (!streamUrl && !isFetching) {
-      setIsFetching(true);
-      fetchStreamUrl()
-        .then((url) => {
-          if (url) {
-            setStreamUrl(url);
-            setStreamLoadFailed(false);
-          }
-        })
-        .finally(() => setIsFetching(false));
-    }
-  }, [streamUrl, isFetching, fetchStreamUrl, clearScrubIdleTimer]);
+    ensureStream();
+  }, [ensureStream, clearScrubIdleTimer]);
 
   const handleMouseLeave = useCallback(() => {
     setIsHovering(false);
@@ -134,7 +156,17 @@ export default function VideoScrubThumbnail({
     [streamUrl, scheduleScrubEnd, scrubEnabled]
   );
 
-  const showVideo = isHovering && streamUrl && !streamLoadFailed;
+  const hasStreamReady = !!(streamUrl && !streamLoadFailed);
+  const showStreamSurface = hasStreamReady && (isHovering || eagerLoadStream);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !showStreamSurface) return;
+    if (!isHovering) {
+      v.pause();
+      v.currentTime = 0;
+    }
+  }, [showStreamSurface, isHovering, streamUrl]);
 
   useEffect(() => {
     if (scrubEnabled) return;
@@ -155,12 +187,12 @@ export default function VideoScrubThumbnail({
       v.removeEventListener("pause", onPause);
       if (t != null) clearTimeout(t);
     };
-  }, [scrubEnabled, streamUrl, showVideo]);
+  }, [scrubEnabled, streamUrl, showStreamSurface]);
 
   /** Loop segment when idle on hover */
   useEffect(() => {
     const v = videoRef.current;
-    if (!v || !showVideo || isScrubbing) return;
+    if (!v || !hasStreamReady || !isHovering || isScrubbing) return;
     const onTime = () => {
       const dur = v.duration;
       if (!dur || !Number.isFinite(dur)) return;
@@ -171,12 +203,12 @@ export default function VideoScrubThumbnail({
     };
     v.addEventListener("timeupdate", onTime);
     return () => v.removeEventListener("timeupdate", onTime);
-  }, [showVideo, isScrubbing, loopSeconds, streamUrl]);
+  }, [hasStreamReady, isHovering, isScrubbing, loopSeconds, streamUrl]);
 
   /** Start / resume looping playback when not scrubbing */
   useEffect(() => {
     const v = videoRef.current;
-    if (!v || !showVideo || isScrubbing) return;
+    if (!v || !hasStreamReady || !isHovering || isScrubbing) return;
     v.muted = true;
     if (v.readyState >= 2) {
       if (v.currentTime >= Math.min(loopSeconds, v.duration || loopSeconds) - 0.02) {
@@ -184,11 +216,11 @@ export default function VideoScrubThumbnail({
       }
       void v.play().catch(() => {});
     }
-  }, [showVideo, isScrubbing, loopSeconds, streamUrl]);
+  }, [hasStreamReady, isHovering, isScrubbing, loopSeconds, streamUrl]);
 
   useEffect(() => () => clearScrubIdleTimer(), [clearScrubIdleTimer]);
 
-  const showThumbnail = !showVideo && (thumbnailUrl || isLoading);
+  const showThumbnail = !showStreamSurface && (thumbnailUrl || isLoading);
 
   return (
     <div
@@ -198,14 +230,15 @@ export default function VideoScrubThumbnail({
       onMouseLeave={handleMouseLeave}
       onMouseMove={handleMouseMove}
     >
-      {showVideo ? (
+      {showStreamSurface ? (
         <video
           ref={videoRef}
-          src={streamUrl}
+          src={streamUrl ?? undefined}
+          poster={thumbnailUrl ?? undefined}
           muted
           playsInline
-          preload="metadata"
-          className={`absolute inset-0 h-full w-full bg-neutral-900 ${objectFit}`}
+          preload={eagerLoadStream ? "auto" : "metadata"}
+          className={`pointer-events-none absolute inset-0 h-full w-full bg-neutral-900 ${objectFit}`}
           onError={() => setStreamLoadFailed(true)}
           onEnded={(e) => {
             const v = e.currentTarget;
@@ -215,9 +248,10 @@ export default function VideoScrubThumbnail({
           }}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
-            if (!isHoveringRef.current) return;
             if (v.duration && v.duration > 0) {
               v.currentTime = 0;
+            }
+            if (isHoveringRef.current && v.duration && v.duration > 0) {
               void v.play().catch(() => {});
             }
           }}
@@ -228,7 +262,7 @@ export default function VideoScrubThumbnail({
           <img
             src={thumbnailUrl ?? ""}
             alt=""
-            className={`absolute inset-0 h-full w-full ${objectFit}`}
+            className={`pointer-events-none absolute inset-0 h-full w-full ${objectFit}`}
           />
         </>
       ) : (
@@ -236,14 +270,14 @@ export default function VideoScrubThumbnail({
           <Film className="h-8 w-8 text-neutral-500 dark:text-neutral-400" />
         </div>
       )}
-      {showPlayIcon && (showVideo || showThumbnail || isLoading) && (
+      {showPlayIcon && (showStreamSurface || showThumbnail || isLoading) && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/50 shadow-lg">
             <Play className="ml-1 h-6 w-6 fill-white text-white" />
           </div>
         </div>
       )}
-      {showVideo && scrubPosition !== null && isScrubbing && (
+      {showStreamSurface && scrubPosition !== null && isScrubbing && (
         <div
           className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_4px_rgba(0,0,0,0.8)]"
           style={{ left: `${scrubPosition * 100}%` }}

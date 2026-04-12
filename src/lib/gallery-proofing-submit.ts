@@ -58,7 +58,6 @@ export async function submitProofingList(params: {
   );
 
   const assetSnapshotMin = await buildAssetSnapshotMin(db, galleryId, uniqueIds);
-  const galleryType = galleryRow.gallery_type === "video" ? "video" : "photo";
   const now = new Date();
   const organizationId = normOrgId(galleryRow.organization_id);
   const personalTeamOwnerId = normPto(galleryRow.personal_team_owner_id);
@@ -72,7 +71,6 @@ export async function submitProofingList(params: {
     clientName,
     mediaFolderSegment,
     clientFolderSegment,
-    galleryType,
     listType,
     title: title ?? null,
     shellContext,

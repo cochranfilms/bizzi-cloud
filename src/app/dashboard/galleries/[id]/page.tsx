@@ -39,7 +39,7 @@ import GalleryAddFromLibraryModal from "@/components/gallery/GalleryAddFromLibra
 
 interface GalleryData {
   id: string;
-  gallery_type?: "photo" | "video";
+  gallery_type?: "photo" | "video" | "mixed";
   media_mode?: "final" | "raw";
   title: string;
   slug: string;
@@ -106,7 +106,10 @@ export default function GalleryDetailPage() {
   const [settingCover, setSettingCover] = useState<string | null>(null);
   const [settingFeatured, setSettingFeatured] = useState<string | null>(null);
   const [removingAssetId, setRemovingAssetId] = useState<string | null>(null);
-  const isVideoGallery = gallery?.gallery_type === "video";
+  const isStrictVideoGallery = gallery?.gallery_type === "video";
+  const isMixedGallery = gallery?.gallery_type === "mixed";
+  const isVideoDeliveryGallery =
+    gallery?.gallery_type === "video" || gallery?.gallery_type === "mixed";
   const isTeamRoute =
     typeof pathname === "string" && pathname.startsWith("/team/");
 
@@ -142,7 +145,7 @@ export default function GalleryDetailPage() {
   };
 
   const handleSetFeaturedVideo = async (assetId: string) => {
-    if (!user || !id || gallery?.version == null || !isVideoGallery) return;
+    if (!user || !id || gallery?.version == null || !isVideoDeliveryGallery) return;
     setSettingFeatured(assetId);
     try {
       const token = await user.getIdToken();
@@ -351,7 +354,15 @@ export default function GalleryDetailPage() {
 
   const filesEligibleForFromFiles = recentFiles.filter((f) => {
     if (f.driveName === "Gallery Media") return false;
-    if (isVideoGallery) {
+    if (isMixedGallery) {
+      if (isGalleryVideo(f.name)) {
+        if (f.contentType?.startsWith("image/")) return false;
+        return true;
+      }
+      if (isGalleryImage(f.name) && !isGalleryVideo(f.name)) return true;
+      return false;
+    }
+    if (isStrictVideoGallery) {
       if (!isGalleryVideo(f.name)) return false;
       if (f.contentType?.startsWith("image/")) return false;
       return true;
@@ -449,7 +460,9 @@ export default function GalleryDetailPage() {
           </div>
 
           <GalleryOwnerProfileBanner
-            galleryType={isVideoGallery ? "video" : "photo"}
+            galleryType={
+              isMixedGallery ? "mixed" : isStrictVideoGallery ? "video" : "photo"
+            }
             mediaMode={gallery?.media_mode === "raw" ? "raw" : "final"}
           />
 
@@ -459,7 +472,7 @@ export default function GalleryDetailPage() {
             <GalleryDetailHealthAdvisories
               galleryId={id}
               settingsHref={`${navBase}/galleries/${id}/settings`}
-              galleryType={isVideoGallery ? "video" : "photo"}
+              galleryType={isMixedGallery ? "photo" : isStrictVideoGallery ? "video" : "photo"}
               mediaMode={gallery?.media_mode === "raw" ? "raw" : "final"}
               assets={assets}
             />
@@ -467,8 +480,8 @@ export default function GalleryDetailPage() {
 
           <div className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
             <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-700">
-              <h2 className="font-medium text-neutral-900 dark:text-white">
-                {isVideoGallery ? "Video" : "Photo"} ·{" "}
+                           <h2 className="font-medium text-neutral-900 dark:text-white">
+                {isMixedGallery ? "Mixed" : isStrictVideoGallery ? "Video" : "Photo"} ·{" "}
                 {gallery?.media_mode === "raw" ? "RAW" : "Final"} · Assets
               </h2>
               <div className="flex items-center gap-2">
@@ -488,7 +501,7 @@ export default function GalleryDetailPage() {
                 galleryTitle={gallery?.title}
                 mediaFolderSegment={gallery?.media_folder_segment}
                 mediaMode={gallery?.media_mode ?? "final"}
-                galleryType={isVideoGallery ? "video" : "photo"}
+                galleryType={isMixedGallery ? "mixed" : isStrictVideoGallery ? "video" : "photo"}
                 onGalleryManageUploadLifecycle={onManageUploadLifecycle}
                 onGalleryAssetUploaded={() => {
                   void fetchAssets();
@@ -508,9 +521,11 @@ export default function GalleryDetailPage() {
             {assets.length === 0 && pendingUploads.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8">
                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                  {isVideoGallery
-                    ? "Upload videos or add from your existing files to start this review gallery."
-                    : "Upload photos or add from your existing files."}
+                  {isMixedGallery
+                    ? "Upload photos and videos, or add from your existing files."
+                    : isStrictVideoGallery
+                      ? "Upload videos or add from your existing files to start this review gallery."
+                      : "Upload photos or add from your existing files."}
                 </p>
               </div>
             ) : (
@@ -523,7 +538,12 @@ export default function GalleryDetailPage() {
                     <div className="flex flex-1 flex-col items-center justify-center p-2 text-center">
                       {p.phase === "failed" ? (
                         <AlertCircle className="mb-1 h-8 w-8 text-red-500" />
-                      ) : isVideoGallery ? (
+                      ) : isMixedGallery ? (
+                        <div className="mb-1 flex gap-0.5 text-bizzi-blue">
+                          <ImageIcon className="h-7 w-7" />
+                          <Film className="h-7 w-7" />
+                        </div>
+                      ) : isStrictVideoGallery ? (
                         <Film className="mb-1 h-8 w-8 text-bizzi-blue" />
                       ) : (
                         <ImageIcon className="mb-1 h-8 w-8 text-bizzi-blue" />
@@ -581,7 +601,7 @@ export default function GalleryDetailPage() {
                           Cover
                         </div>
                       )}
-                      {isVideoGallery && isFeatured && (
+                      {isVideoDeliveryGallery && isFeatured && (
                         <div className="absolute left-0 top-0 mt-6 rounded-br bg-violet-600 px-2 py-0.5 text-xs font-medium text-white">
                           Featured
                         </div>
@@ -602,7 +622,7 @@ export default function GalleryDetailPage() {
                             {settingThis ? "Setting…" : "Set as cover"}
                           </button>
                         )}
-                        {isVideoGallery && isVideo && (
+                        {isVideoDeliveryGallery && isVideo && (
                           <button
                             type="button"
                             onClick={() => handleSetFeaturedVideo(a.id)}
@@ -617,7 +637,7 @@ export default function GalleryDetailPage() {
                             {settingFeaturedThis ? "Setting…" : "Set featured"}
                           </button>
                         )}
-                        {!isImage && isVideo && !isVideoGallery && (
+                        {!isImage && isVideo && !isStrictVideoGallery && (
                           <button
                             type="button"
                             onClick={() => handleSetCover(a.id)}
@@ -663,8 +683,9 @@ export default function GalleryDetailPage() {
           setShowAddModal(false);
           setSelectedIds(new Set());
         }}
-        isVideoGallery={isVideoGallery}
-        showRawDrive={isVideoGallery && gallery?.media_mode === "raw"}
+        isVideoGallery={isStrictVideoGallery}
+        isMixedGallery={isMixedGallery}
+        showRawDrive={isStrictVideoGallery && gallery?.media_mode === "raw"}
         isTeamRoute={isTeamRoute}
         selectedIds={selectedIds}
         setSelectedIds={setSelectedIds}

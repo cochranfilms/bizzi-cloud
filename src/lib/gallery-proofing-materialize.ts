@@ -11,12 +11,13 @@ import {
   loadExistingProofingObjectKeys,
   resolveGalleryFavoritesWriteContext,
 } from "@/lib/gallery-favorites-write-context";
-import type { MaterializationState } from "@/lib/gallery-proofing-types";
+import type { MaterializationState, ProofingListType } from "@/lib/gallery-proofing-types";
+import { proofingRootSegmentFromListType } from "@/lib/gallery-proofing-types";
 import {
   ensureProofingShortcutParentFolder,
   repairProofingMaterializedShortcutsMissingFolderId,
 } from "@/lib/gallery-proofing-storage-layout";
-import { canonicalProofingRootSegment, resolveMediaFolderSegmentForPath } from "@/lib/gallery-media-path";
+import { resolveMediaFolderSegmentForPath } from "@/lib/gallery-media-path";
 import { assignProofingFolderSlug } from "@/lib/gallery-proofing-slug";
 import { toNormalizedComparisonKey } from "@/lib/storage-folders/normalize";
 
@@ -76,7 +77,6 @@ async function ensureImmutableListPrefix(
   db: Firestore,
   galleryId: string,
   listId: string,
-  galleryKind: "photo" | "video",
   galleryRow: GalleryManagementDoc
 ): Promise<{ prefix: string }> {
   const ref = db.collection("favorites_lists").doc(listId);
@@ -91,7 +91,9 @@ async function ensureImmutableListPrefix(
       return { prefix: existing };
     }
 
-    const root = canonicalProofingRootSegment(galleryKind);
+    const listType: ProofingListType =
+      d.list_type === "video_selects" ? "video_selects" : "photo_favorites";
+    const root = proofingRootSegmentFromListType(listType);
     const media = resolveMediaFolderSegmentForPath(
       { ...galleryRow, id: galleryId } as Record<string, unknown>,
       galleryId
@@ -144,10 +146,6 @@ async function enterProcessingOrThrow(db: Firestore, listRef: DocumentReference)
   });
 }
 
-function galleryKindFromRow(g: Record<string, unknown>): "photo" | "video" {
-  return g.gallery_type === "video" ? "video" : "photo";
-}
-
 export async function materializeProofingList(params: {
   db: Firestore;
   actingUid: string;
@@ -168,10 +166,11 @@ export async function materializeProofingList(params: {
     return { ok: false, error: "List is archived", status: 400 };
   }
 
-  const gKind = galleryKindFromRow(galleryRow as Record<string, unknown>);
+  const listMediaKind: "photo" | "video" =
+    listData.list_type === "video_selects" ? "video" : "photo";
   let prefix: string;
   try {
-    const r = await ensureImmutableListPrefix(db, galleryId, listId, gKind, galleryRow);
+    const r = await ensureImmutableListPrefix(db, galleryId, listId, galleryRow);
     prefix = r.prefix;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -217,11 +216,11 @@ export async function materializeProofingList(params: {
       continue;
     }
     const mt = ad.media_type as string | undefined;
-    if (gKind === "photo" && mt !== "image") {
+    if (listMediaKind === "photo" && mt !== "image") {
       skippedIds.push(aid);
       continue;
     }
-    if (gKind === "video" && mt !== "video") {
+    if (listMediaKind === "video" && mt !== "video") {
       skippedIds.push(aid);
       continue;
     }

@@ -128,7 +128,8 @@ export async function GET(
     };
   });
 
-  const galleryType = g.gallery_type === "video" ? "video" : "photo";
+  const galleryType =
+    g.gallery_type === "video" ? "video" : g.gallery_type === "mixed" ? "mixed" : "photo";
   const mediaMode = normalizeGalleryMediaMode({
     media_mode: g.media_mode as string | null | undefined,
     source_format: g.source_format as string | null | undefined,

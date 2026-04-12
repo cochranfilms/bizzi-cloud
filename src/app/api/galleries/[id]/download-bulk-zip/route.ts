@@ -19,6 +19,7 @@ import {
   shouldOmitAssetFromFinalVideoDeliveryListing,
 } from "@/lib/gallery-final-video-delivery-asset-filter";
 import { videoGalleryAllowsClientFileDownloads } from "@/lib/gallery-video-download-policy";
+import { isVideoDeliveryGallery } from "@/lib/gallery-type";
 
 const MAX_ITEMS = 50;
 
@@ -131,8 +132,6 @@ export async function POST(
     }
   }
 
-  const galleryType = g.gallery_type === "video" ? "video" : "photo";
-
   if (!isOwner) {
     const invoiceRequired = g.invoice_required_for_download === true;
     const invoiceStatus = g.invoice_status ?? "none";
@@ -147,7 +146,7 @@ export async function POST(
       );
     }
 
-    if (galleryType === "video") {
+    if (isVideoDeliveryGallery(g)) {
       const downloadPolicy = g.download_policy ?? "none";
       if (!videoGalleryAllowsClientFileDownloads(downloadPolicy)) {
         return NextResponse.json(
