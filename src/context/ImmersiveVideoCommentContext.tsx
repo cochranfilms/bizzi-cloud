@@ -5,6 +5,8 @@ import { createContext, useContext, type ReactNode } from "react";
 export type ImmersiveVideoCommentContextValue = {
   /** Pauses playback and returns the current time in seconds, or null if no player is bound. */
   pauseAndGetTimestamp: () => number | null;
+  /** Seek immersive viewer to this time (seconds, fractional) and start playback. */
+  seekToSeconds: (sec: number) => void;
   /** Hex color for the timecode badge (custom button / dashboard chrome primary). */
   badgeColorHex: string;
   /** Current video playback position in seconds (updates while the video plays). */

@@ -214,8 +214,8 @@ export default function UppyUploadModal({
 
   const [ready, setReady] = useState(false);
   const [panelPlacement, setPanelPlacement] = useState<{
-    top: number;
-    right: number;
+    left: number;
+    bottom: number;
     width: number;
     maxHeight: number;
   } | null>(null);
@@ -308,21 +308,30 @@ export default function UppyUploadModal({
     }
     const measure = () => {
       const el = workspaceUploadAnchorRef.current;
+      const vw = window.innerWidth;
+      const vh = window.visualViewport?.height ?? window.innerHeight;
+      const gap = 12;
+      /** Portrait-first panel (Shade-style): narrow width, tall body; sits above the cloud so the trigger stays tappable. */
+      const panelWidth = Math.min(380, Math.max(300, vw - 20));
+
       if (!el) {
         setPanelPlacement({
-          top: Math.max(8, window.innerHeight * 0.12),
-          right: 8,
-          width: Math.min(448, Math.max(280, window.innerWidth - 24)),
-          maxHeight: Math.min(560, window.innerHeight * 0.78),
+          left: vw / 2,
+          bottom: 24,
+          width: panelWidth,
+          maxHeight: Math.min(Math.floor(vh * 0.72), 720),
         });
         return;
       }
       const r = el.getBoundingClientRect();
-      const width = Math.max(280, Math.min(448, r.left - 16));
-      const top = Math.max(8, r.top);
-      const right = Math.max(8, window.innerWidth - r.right);
-      const maxHeight = Math.min(560, window.innerHeight - top - 12);
-      setPanelPlacement({ top, right, width, maxHeight });
+      const availAbove = Math.max(140, r.top - gap);
+      const maxHeight = Math.min(Math.floor(vh * 0.74), availAbove - 10);
+      setPanelPlacement({
+        left: r.left + r.width / 2,
+        bottom: vh - r.top + gap,
+        width: panelWidth,
+        maxHeight: Math.max(280, maxHeight),
+      });
     };
     measure();
     window.addEventListener("resize", measure);
@@ -1034,7 +1043,7 @@ export default function UppyUploadModal({
   const queueHidden = !uploadQueueExpanded;
   const shell = (
     <div
-      className="bizzi-uppy-theme bizzi-upload-panel-shell flex max-h-[min(85dvh,560px)] flex-col overflow-hidden rounded-xl border shadow-lg sm:rounded-2xl"
+      className="bizzi-uppy-theme bizzi-upload-panel-shell flex min-h-0 flex-col overflow-hidden rounded-xl border shadow-lg sm:rounded-2xl"
       style={{
         ...(uppyChromeVars as CSSProperties),
         backgroundColor: "var(--bizzi-upload-workspace-bg)",
@@ -1042,22 +1051,26 @@ export default function UppyUploadModal({
         position: "fixed",
         ...(place
           ? {
-              top: place.top,
-              right: place.right,
+              left: place.left,
+              bottom: place.bottom,
               width: place.width,
               maxHeight: place.maxHeight,
               zIndex: queueHidden ? 0 : 105,
-              transform: queueHidden ? "translateX(calc(100vw + 64px))" : undefined,
+              transform: queueHidden
+                ? "translate(-50%, 0) translateX(min(100vw, 120vw))"
+                : "translate(-50%, 0)",
               opacity: queueHidden ? 0 : 1,
               pointerEvents: queueHidden ? "none" : "auto",
             }
           : {
-              top: 12,
-              right: 12,
-              width: Math.min(448, typeof window !== "undefined" ? window.innerWidth - 24 : 448),
-              maxHeight: 520,
+              left: typeof window !== "undefined" ? window.innerWidth / 2 : 0,
+              bottom: 24,
+              width: Math.min(380, typeof window !== "undefined" ? window.innerWidth - 24 : 380),
+              maxHeight: typeof window !== "undefined" ? Math.min(window.innerHeight * 0.72, 720) : 520,
               zIndex: queueHidden ? 0 : 105,
-              transform: queueHidden ? "translateX(calc(100vw + 64px))" : undefined,
+              transform: queueHidden
+                ? "translate(-50%, 0) translateX(min(100vw, 120vw))"
+                : "translate(-50%, 0)",
               opacity: queueHidden ? 0 : 1,
               pointerEvents: queueHidden ? "none" : "auto",
             }),

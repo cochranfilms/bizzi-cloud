@@ -368,6 +368,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           isSystemFolder: false,
           ...(v2FolderLocked ? { preventDelete: true } : {}),
           ...(cover ? { coverFile: cover } : {}),
+          ...(typeof t.folderRecencyMs === "number" && Number.isFinite(t.folderRecencyMs)
+            ? { folderRecencyMs: t.folderRecencyMs }
+            : {}),
         };
       }),
     [storageTopFolders]

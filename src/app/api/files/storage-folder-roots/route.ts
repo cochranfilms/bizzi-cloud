@@ -87,6 +87,9 @@ type StorageFolderRootRow = {
   /** Matches storage_folders + FileGrid: block user delete/move/rename in UI. */
   system_folder_role?: string;
   protected_deletion?: boolean;
+  /** Firestore timestamps — used only for sibling sort (newest first) after JSON. */
+  updated_at?: unknown;
+  created_at?: unknown;
   cover_file?: {
     object_key: string;
     file_name: string;
@@ -156,6 +159,8 @@ async function appendV2StorageRootFolderRows(
       lifecycle_state: typeof f.lifecycle_state === "string" ? f.lifecycle_state : undefined,
       ...(system_folder_role ? { system_folder_role } : {}),
       ...(protected_deletion ? { protected_deletion: true as const } : {}),
+      ...(f.updated_at != null ? { updated_at: f.updated_at } : {}),
+      ...(f.created_at != null ? { created_at: f.created_at } : {}),
       cover_file,
     });
   }

@@ -58,6 +58,10 @@ import {
   isBackupFileActiveForListing,
   resolveBackupFileLifecycleState,
 } from "@/lib/backup-file-lifecycle";
+import {
+  compareStorageFolderRowsTransfersRootFirst,
+  storageFolderRowRecencyMs,
+} from "@/lib/storage-folders";
 import { COLLECTION_STORAGE_FOLDERS } from "@/lib/storage-folders/types";
 import {
   registerCloudFilesPostMutationRefresh,
@@ -283,6 +287,43 @@ export type StorageFolderCoverFile = {
   content_type: string | null;
 };
 
+/** Normalize Firestore date fields from JSON or client Timestamp for sorting / display. */
+function isoFromFirestoreUnknown(ua: unknown): string | null {
+  if (ua == null) return null;
+  if (typeof ua === "string" && ua.trim()) {
+    const t = Date.parse(ua);
+    return Number.isFinite(t) ? new Date(t).toISOString() : null;
+  }
+  if (typeof ua === "object" && ua !== null) {
+    const o = ua as {
+      toDate?: () => Date;
+      seconds?: number;
+      _seconds?: number;
+      nanoseconds?: number;
+      _nanoseconds?: number;
+    };
+    if (typeof o.toDate === "function") {
+      try {
+        return o.toDate().toISOString();
+      } catch {
+        return null;
+      }
+    }
+    const sec =
+      typeof o.seconds === "number" && Number.isFinite(o.seconds)
+        ? o.seconds
+        : typeof o._seconds === "number" && Number.isFinite(o._seconds)
+          ? o._seconds
+          : null;
+    if (sec != null) {
+      const nsRaw = o.nanoseconds ?? o._nanoseconds;
+      const ns = typeof nsRaw === "number" && Number.isFinite(nsRaw) ? nsRaw : 0;
+      return new Date(sec * 1000 + ns / 1e6).toISOString();
+    }
+  }
+  return null;
+}
+
 /** Narrow folder row from storage-folders list API for UI and picker (not full Firestore). */
 export type StorageFolderListFolder = {
   id: string;
@@ -294,6 +335,7 @@ export type StorageFolderListFolder = {
   operation_state: string;
   lifecycle_state: string;
   updated_at: string | null;
+  created_at: string | null;
   /** Direct child folders + files (matches home tile counts; file branch capped at 500). */
   item_count: number;
   /** Earliest suitable thumbnail among first files in folder (image / video / PDF). */
@@ -338,12 +380,10 @@ export async function fetchStorageFolderList(
     files?: Array<Record<string, unknown>>;
   };
   const folders: StorageFolderListFolder[] = (data.folders ?? []).map((f) => {
-    const ua = f.updated_at as unknown;
-    let updated_at: string | null = null;
-    if (typeof ua === "string") updated_at = ua;
-    else if (ua && typeof (ua as { toDate?: () => Date }).toDate === "function") {
-      updated_at = (ua as { toDate: () => Date }).toDate().toISOString();
-    }
+    const updatedRaw = isoFromFirestoreUnknown(f.updated_at);
+    const createdRaw = isoFromFirestoreUnknown(f.created_at);
+    const updated_at = updatedRaw ?? createdRaw ?? null;
+    const created_at = createdRaw ?? updatedRaw ?? null;
     const ic = f.item_count;
     const item_count =
       typeof ic === "number" && Number.isFinite(ic) ? Math.max(0, Math.floor(ic)) : 0;
@@ -372,12 +412,14 @@ export async function fetchStorageFolderList(
       operation_state: String(f.operation_state ?? "ready"),
       lifecycle_state: String(f.lifecycle_state ?? "active"),
       updated_at,
+      created_at,
       item_count,
       cover_file,
       ...(system_folder_role !== undefined ? { system_folder_role } : {}),
       ...(protected_deletion ? { protected_deletion: true as const } : {}),
     };
   });
+  folders.sort(compareStorageFolderRowsTransfersRootFirst);
   const files = (data.files ?? []).map((raw) =>
     storageListRowToRecentFile(raw, driveId, driveName)
   );
@@ -470,6 +512,8 @@ export interface StorageTopFolderEntry {
   protectedDeletion?: boolean;
   /** Same cover resolution as `/api/storage-folders/list` (v2 roots only). */
   coverFile?: StorageFolderCoverFile | null;
+  /** Sibling sort on home (newest first); from API `updated_at` / `created_at` after JSON. */
+  folderRecencyMs?: number;
 }
 
 export interface DeletedDrive {
@@ -926,6 +970,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 system_folder_role?: string;
                 protected_deletion?: boolean;
                 cover_file?: StorageFolderCoverFile | null;
+                updated_at?: unknown;
+                created_at?: unknown;
               }>;
             };
             topsTeam = (rootsData.folders ?? []).map((f) => ({
@@ -948,6 +994,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 : {}),
               ...(f.protected_deletion === true ? { protectedDeletion: true as const } : {}),
               coverFile: f.cover_file ?? null,
+              folderRecencyMs: storageFolderRowRecencyMs(f as object),
             }));
           }
         }
@@ -1019,6 +1066,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 system_folder_role?: string;
                 protected_deletion?: boolean;
                 cover_file?: StorageFolderCoverFile | null;
+                updated_at?: unknown;
+                created_at?: unknown;
               }>;
             };
             topsPers = (rootsData.folders ?? []).map((f) => ({
@@ -1041,6 +1090,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 : {}),
               ...(f.protected_deletion === true ? { protectedDeletion: true as const } : {}),
               coverFile: f.cover_file ?? null,
+              folderRecencyMs: storageFolderRowRecencyMs(f as object),
             }));
           }
         }

@@ -112,7 +112,7 @@ export default function WorkspaceUploadDock() {
       !uploadDockSummary.allComplete);
 
   return (
-    <div ref={workspaceUploadAnchorRef} className="flex justify-end pt-2">
+    <div ref={workspaceUploadAnchorRef} className="flex w-full justify-center pt-2 pb-1">
       <button
         type="button"
         onClick={() => void handleClick()}

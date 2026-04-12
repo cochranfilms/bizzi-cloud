@@ -4,17 +4,10 @@ import { useState, useRef, useEffect, useCallback, type CSSProperties } from "re
 import Image from "next/image";
 import { Send } from "lucide-react";
 import type { ImmersiveVideoCommentContextValue } from "@/context/ImmersiveVideoCommentContext";
+import { formatVideoCommentTimecodeWithMs } from "@/lib/video-comment-timecode";
 
 const MAX_HEIGHT_PX = 128;
 const MIN_HEIGHT_PX = 40;
-
-function formatImmersiveVideoTimecode(seconds: number): string {
-  const safe = Math.max(0, Math.floor(seconds));
-  const h = Math.floor(safe / 3600);
-  const m = Math.floor((safe % 3600) / 60);
-  const s = safe % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
 
 interface AddCommentInputProps {
   onSubmit: (body: string, videoTimestampSec?: number | null) => Promise<boolean>;
@@ -109,8 +102,8 @@ export default function AddCommentInput({
 
   const shellRowClass = immersiveChrome
     ? immersiveIsDark
-      ? "flex min-h-[2.75rem] w-full min-w-0 items-center gap-2.5 rounded-full border border-white/14 bg-white/[0.06] px-3 py-2 shadow-inner shadow-black/20 focus-within:border-white/28 focus-within:ring-2 focus-within:ring-bizzi-cyan/25"
-      : "flex min-h-[2.75rem] w-full min-w-0 items-center gap-2.5 rounded-full border border-neutral-200/95 bg-white px-3 py-2 shadow-sm focus-within:border-bizzi-blue/50 focus-within:ring-2 focus-within:ring-bizzi-blue/12"
+      ? "flex min-h-[3rem] w-full min-w-0 items-center gap-3 rounded-full border border-white/16 bg-white/[0.07] px-3.5 py-2.5 shadow-inner shadow-black/25 focus-within:border-white/30 focus-within:ring-2 focus-within:ring-bizzi-cyan/25"
+      : "flex min-h-[3rem] w-full min-w-0 items-center gap-3 rounded-full border border-neutral-200 bg-white px-3.5 py-2.5 shadow-sm focus-within:border-bizzi-blue/45 focus-within:ring-2 focus-within:ring-bizzi-blue/12"
     : "";
 
   const textareaInShellClass = immersiveChrome
@@ -146,8 +139,8 @@ export default function AddCommentInput({
 
   const sendBtnClass = immersiveChrome
     ? immersiveIsDark
-      ? "rounded-2xl shadow-sm"
-      : "rounded-2xl shadow-sm"
+      ? "rounded-full shadow-md"
+      : "rounded-full shadow-md"
     : "rounded-lg bg-bizzi-blue hover:bg-bizzi-blue/90 dark:rounded-lg dark:bg-bizzi-cyan dark:hover:bg-bizzi-cyan/90";
 
   const sendBtnStyle =
@@ -155,7 +148,9 @@ export default function AddCommentInput({
 
   const avatar = showComposerAvatar ? (
     <div
-      className={`relative h-10 w-10 shrink-0 overflow-hidden rounded-full ${
+      className={`relative shrink-0 overflow-hidden rounded-full ${
+        shadeStyleBlock ? "h-11 w-11" : "h-10 w-10"
+      } ${
         photo
           ? ""
           : immersiveIsDark
@@ -168,9 +163,9 @@ export default function AddCommentInput({
         <Image
           src={photo}
           alt=""
-          width={40}
-          height={40}
-          className="h-10 w-10 object-cover"
+          width={shadeStyleBlock ? 44 : 40}
+          height={shadeStyleBlock ? 44 : 40}
+          className={`object-cover ${shadeStyleBlock ? "h-11 w-11" : "h-10 w-10"}`}
           unoptimized
         />
       ) : (
@@ -181,10 +176,10 @@ export default function AddCommentInput({
 
   const badge = useVideoCommentShell ? (
     <span
-      className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold tabular-nums leading-none tracking-tight text-white"
+      className="shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-semibold tabular-nums leading-none tracking-tight text-white sm:text-xs"
       style={{ backgroundColor: accentHex || "#64748b" }}
     >
-      {formatImmersiveVideoTimecode(displaySec)}
+      {formatVideoCommentTimecodeWithMs(displaySec)}
     </span>
   ) : null;
 
@@ -198,7 +193,6 @@ export default function AddCommentInput({
       }}
       onKeyDown={handleKeyDown}
       onFocus={captureVideoTimestamp}
-      onBlur={() => setPinnedVideoSec(null)}
       placeholder={placeholder}
       rows={1}
       disabled={submitting}
@@ -216,7 +210,7 @@ export default function AddCommentInput({
       onClick={handleSubmit}
       disabled={!body.trim() || submitting}
       style={sendBtnStyle}
-      className={`flex h-10 w-10 shrink-0 items-center justify-center text-white transition-opacity disabled:opacity-50 ${
+      className={`flex h-11 w-11 shrink-0 items-center justify-center text-white transition-opacity disabled:opacity-50 ${
         useVideoCommentShell && accentHex ? "hover:brightness-110" : ""
       } ${sendBtnClass}`}
       aria-label="Send comment"
@@ -229,22 +223,28 @@ export default function AddCommentInput({
     return (
       <div className="flex gap-3">
         {avatar}
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div
+          className={
+            immersiveIsDark
+              ? "flex min-w-0 flex-1 flex-col gap-3 rounded-2xl border border-white/12 bg-white/[0.06] p-4 shadow-lg shadow-black/25"
+              : "flex min-w-0 flex-1 flex-col gap-3 rounded-2xl border border-neutral-200/95 bg-white p-4 shadow-md shadow-neutral-900/5"
+          }
+        >
           <div
             className={
               immersiveIsDark
-                ? "truncate text-sm font-semibold text-white/95"
-                : "truncate text-sm font-semibold text-neutral-900"
+                ? "truncate text-[15px] font-bold leading-tight tracking-tight text-white"
+                : "truncate text-[15px] font-bold leading-tight tracking-tight text-neutral-900"
             }
           >
             {displayName}
           </div>
-          <div className="flex items-end gap-2">
-            <div className={`${shellRowClass} flex-1`}>
+          <div className="flex items-center gap-2.5">
+            <div className={`${shellRowClass} min-w-0 flex-1`}>
               {badge}
               {textArea}
             </div>
-            <div className="flex shrink-0 flex-col gap-1 pb-px">{sendButton}</div>
+            {sendButton}
           </div>
           {showCancel && onCancel && (
             <button

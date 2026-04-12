@@ -4,6 +4,8 @@ import { useState } from "react";
 import Image from "next/image";
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import type { Comment } from "@/types/collaboration";
+import { useImmersiveVideoCommentOptional } from "@/context/ImmersiveVideoCommentContext";
+import { formatVideoCommentTimecodeWithMs } from "@/lib/video-comment-timecode";
 
 interface CommentItemProps {
   comment: Comment;
@@ -15,14 +17,6 @@ interface CommentItemProps {
   immersiveIsDark?: boolean;
   /** Dashboard custom button / chrome primary; used for video timecode badge. */
   videoTimestampBadgeHex?: string | null;
-}
-
-function formatVideoCommentTimecode(seconds: number): string {
-  const safe = Math.max(0, Math.floor(seconds));
-  const h = Math.floor(safe / 3600);
-  const m = Math.floor((safe % 3600) / 60);
-  const s = safe % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 function formatCommentTime(iso: string | null | undefined): string {
@@ -61,6 +55,7 @@ export default function CommentItem({
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState(comment.body);
   const [menuOpen, setMenuOpen] = useState(false);
+  const immersiveVideoComment = useImmersiveVideoCommentOptional();
 
   const name = displayName(comment, isOwn);
   const timeLabel = formatCommentTime(comment.createdAt);
@@ -84,8 +79,23 @@ export default function CommentItem({
     );
   }
 
+  const videoTs = comment.videoTimestampSec;
+  const canSeekVideo =
+    immersiveChrome &&
+    videoTs != null &&
+    Number.isFinite(videoTs) &&
+    !!immersiveVideoComment;
+
   return (
-    <div className={`group relative py-2 ${immersiveChrome ? "" : "rounded-lg"}`}>
+    <div
+      className={`group relative py-2 ${
+        immersiveChrome
+          ? immersiveIsDark
+            ? "rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-3 shadow-md shadow-black/20"
+            : "rounded-2xl border border-neutral-200/90 bg-white px-3 py-3 shadow-sm"
+          : "rounded-lg"
+      }`}
+    >
       <div className="flex gap-2.5">
         <div
           className={`relative h-8 w-8 shrink-0 overflow-hidden rounded-full ${
@@ -216,15 +226,29 @@ export default function CommentItem({
                   : "mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-1 whitespace-pre-wrap break-words text-sm leading-snug text-neutral-800 dark:text-neutral-200"
               }
             >
-              {comment.videoTimestampSec != null && Number.isFinite(comment.videoTimestampSec) ? (
-                <span
-                  className="inline-flex shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-white"
-                  style={{
-                    backgroundColor: videoTimestampBadgeHex?.trim() || "#64748b",
-                  }}
-                >
-                  {formatVideoCommentTimecode(comment.videoTimestampSec)}
-                </span>
+              {videoTs != null && Number.isFinite(videoTs) ? (
+                canSeekVideo ? (
+                  <button
+                    type="button"
+                    onClick={() => immersiveVideoComment?.seekToSeconds(videoTs)}
+                    className="inline-flex shrink-0 cursor-pointer rounded-full px-2 py-1 text-[11px] font-semibold tabular-nums text-white transition-[filter] hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-neutral-900/35 dark:focus-visible:ring-white/45 dark:focus-visible:ring-offset-0"
+                    style={{
+                      backgroundColor: videoTimestampBadgeHex?.trim() || "#64748b",
+                    }}
+                    title="Jump to this time in the video"
+                  >
+                    {formatVideoCommentTimecodeWithMs(videoTs)}
+                  </button>
+                ) : (
+                  <span
+                    className="inline-flex shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold tabular-nums text-white"
+                    style={{
+                      backgroundColor: videoTimestampBadgeHex?.trim() || "#64748b",
+                    }}
+                  >
+                    {formatVideoCommentTimecodeWithMs(videoTs)}
+                  </span>
+                )
               ) : null}
               <span className="min-w-0">{comment.body}</span>
             </p>

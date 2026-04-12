@@ -312,6 +312,9 @@ export default function FilePreviewModal({
     return {
       pauseAndGetTimestamp: () =>
         immersiveVideoCommentRef.current?.pauseAndGetCurrentTime() ?? null,
+      seekToSeconds: (sec: number) => {
+        immersiveVideoCommentRef.current?.seekToSeconds(sec);
+      },
       badgeColorHex: immersiveCommentBadgeHex,
       livePlaybackSec: videoLivePlaybackSec,
     };
@@ -1075,6 +1078,7 @@ export default function FilePreviewModal({
                     onIntrinsicVideoSize={onIntrinsicVideoSize}
                     immersiveSettingsActions={immersiveVideoSettingsActions ?? undefined}
                     onPlaybackTimeSec={setVideoLivePlaybackSec}
+                    playbackTimeHighFrequency
                   />
                 </div>
               ) : (
@@ -1097,6 +1101,7 @@ export default function FilePreviewModal({
                   onIntrinsicVideoSize={onIntrinsicVideoSize}
                   immersiveSettingsActions={immersiveVideoSettingsActions ?? undefined}
                   onPlaybackTimeSec={setVideoLivePlaybackSec}
+                  playbackTimeHighFrequency
                 />
               )}
             </div>

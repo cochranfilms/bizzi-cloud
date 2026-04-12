@@ -33,4 +33,5 @@ export { permanentlyDeleteStorageFolderSubtree } from "./permanent-delete-subtre
 export {
   compareStorageFolderRowsTransfersRootFirst,
   compareFolderItemsTransfersRootFirst,
+  storageFolderRowRecencyMs,
 } from "./folder-display-order";

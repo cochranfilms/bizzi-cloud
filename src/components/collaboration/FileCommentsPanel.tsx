@@ -94,14 +94,14 @@ export default function FileCommentsPanel({
   const commentVideoBadgeHex = immersiveVideoComment?.badgeColorHex ?? null;
 
   return (
-    <div className={`flex flex-col gap-2 ${className}`}>
+    <div className={`flex flex-col ${immersiveChrome ? "gap-4" : "gap-2"} ${className}`}>
       <div className="flex items-center justify-between gap-2">
         <h3
           className={
             immersiveChrome
               ? immersiveIsDark
-                ? "text-xs font-semibold tracking-tight text-white/90"
-                : "text-xs font-semibold tracking-tight text-neutral-600"
+                ? "text-[15px] font-bold tracking-tight text-white"
+                : "text-[15px] font-bold tracking-tight text-neutral-900"
               : "text-sm font-medium text-neutral-700 dark:text-neutral-300"
           }
         >
@@ -130,7 +130,7 @@ export default function FileCommentsPanel({
       {user ? (
         <AddCommentInput
           onSubmit={handleAdd}
-          placeholder="Add a comment…"
+          placeholder="Add comment…"
           autoFocus={false}
           immersiveChrome={immersiveChrome}
           immersiveIsDark={immersiveChrome ? immersiveIsDark : undefined}

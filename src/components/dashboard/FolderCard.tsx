@@ -76,6 +76,8 @@ export interface FolderItem {
   isConsolidatedStorageShortcut?: boolean;
   /** Storage v2: earliest previewable file in folder (image / video / PDF) for tile cover */
   coverFile?: { objectKey: string; fileName: string; contentType?: string | null };
+  /** Sibling sort (e.g. home Bizzi Cloud Folders): newest first with Transfers pinned first. */
+  folderRecencyMs?: number;
 }
 
 interface FolderCardProps {

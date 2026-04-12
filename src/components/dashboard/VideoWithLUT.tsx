@@ -87,6 +87,8 @@ export interface LUTOption {
 export type VideoWithLUTHandle = {
   /** Pauses playback and returns the current playback time in seconds. */
   pauseAndGetCurrentTime: () => number | null;
+  /** Seek to time (fractional seconds) and play. */
+  seekToSeconds: (sec: number) => void;
   getVideoElement: () => HTMLVideoElement | null;
 };
 
@@ -156,6 +158,11 @@ interface VideoWithLUTProps {
   immersiveSettingsActions?: ImmersiveVideoSettingItem[] | null;
   /** Fired on timeupdate with playback position (immersive comments live clock). */
   onPlaybackTimeSec?: (sec: number) => void;
+  /**
+   * When set with `onPlaybackTimeSec`, emit playback time every animation frame while playing
+   * so millisecond timecodes stay smooth (e.g. immersive comment badge).
+   */
+  playbackTimeHighFrequency?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -195,11 +202,14 @@ const VideoWithLUT = forwardRef<VideoWithLUTHandle, VideoWithLUTProps>(function 
     lutTelemetryPasswordProtected,
     immersiveSettingsActions = null,
     onPlaybackTimeSec,
+    playbackTimeHighFrequency = false,
   },
   ref,
 ) {
   const onPlaybackTimeSecRef = useRef(onPlaybackTimeSec);
   onPlaybackTimeSecRef.current = onPlaybackTimeSec;
+  const playbackTimeHighFrequencyRef = useRef(playbackTimeHighFrequency);
+  playbackTimeHighFrequencyRef.current = playbackTimeHighFrequency;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -955,6 +965,17 @@ const VideoWithLUT = forwardRef<VideoWithLUTHandle, VideoWithLUTProps>(function 
         const t = video.currentTime;
         return Number.isFinite(t) ? Math.max(0, t) : 0;
       },
+      seekToSeconds: (sec: number) => {
+        const video = videoRef.current;
+        if (!video) return;
+        const t = Number.isFinite(sec) ? Math.max(0, sec) : 0;
+        try {
+          video.currentTime = t;
+        } catch {
+          return;
+        }
+        void video.play().catch(() => {});
+      },
       getVideoElement: () => videoRef.current,
     }),
     [],
@@ -976,15 +997,38 @@ const VideoWithLUT = forwardRef<VideoWithLUTHandle, VideoWithLUTProps>(function 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    let rafId = 0;
     const emitPlayback = (t: number) => {
       onPlaybackTimeSecRef.current?.(Number.isFinite(t) ? Math.max(0, t) : 0);
     };
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
-    const onTimeUpdate = () => {
+    const tick = () => {
+      if (!video.paused && playbackTimeHighFrequencyRef.current) {
+        const t = video.currentTime;
+        setCurrentTime(t);
+        emitPlayback(t);
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+    const onPlay = () => {
+      setIsPlaying(true);
+      if (playbackTimeHighFrequencyRef.current) {
+        cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+    const onPause = () => {
+      setIsPlaying(false);
+      cancelAnimationFrame(rafId);
       const t = video.currentTime;
       setCurrentTime(t);
       emitPlayback(t);
+    };
+    const onTimeUpdate = () => {
+      const t = video.currentTime;
+      setCurrentTime(t);
+      if (!playbackTimeHighFrequencyRef.current || video.paused) {
+        emitPlayback(t);
+      }
     };
     const onDurationChange = () => setDuration(video.duration);
     const onVolumeChange = () => {
@@ -1002,7 +1046,11 @@ const VideoWithLUT = forwardRef<VideoWithLUTHandle, VideoWithLUTProps>(function 
     setDuration(video.duration);
     setVolume(video.volume);
     setIsMuted(video.muted);
+    if (!video.paused && playbackTimeHighFrequencyRef.current) {
+      rafId = requestAnimationFrame(tick);
+    }
     return () => {
+      cancelAnimationFrame(rafId);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("timeupdate", onTimeUpdate);

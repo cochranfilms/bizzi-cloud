@@ -2438,6 +2438,14 @@ export default function FileGrid({
         currentDriveMeta?.is_creator_raw !== true)
   );
   const embeddedFolderGridRevealClass = embeddedFolderBrowse ? "min-h-0" : "contents";
+  /** Home /files inline Storage: avoid 52vh-tall loading + grid row stretch so the pane doesn’t “jump” open. */
+  const embeddedBrowseDriveGridClass = embeddedFolderBrowse
+    ? `relative grid items-start ${gridGapClass} ${gridColsClass}`
+    : `relative grid ${gridGapClass} ${gridColsClass}`;
+  const embeddedBrowseGridItemShell = embeddedFolderBrowse
+    ? "min-h-0 min-w-0 w-full max-w-full"
+    : "h-full min-h-0 min-w-0 w-full max-w-full";
+  const embeddedBrowseFileItemShell = embeddedFolderBrowse ? "min-h-0" : "h-full min-h-0";
   const gridSubfolderItems = useMemo(() => {
     const hideRootDuplicatesInHomeInline =
       embeddedFolderBrowse &&
@@ -3059,7 +3067,11 @@ export default function FileGrid({
           </div>
         ) : showFolderLoadingPlaceholder ? (
           <div
-            className="flex min-h-[min(380px,52vh)] items-center justify-center px-3 py-10 sm:px-6"
+            className={
+              embeddedFolderBrowse
+                ? "flex min-h-[10rem] items-center justify-center px-3 py-8 sm:px-6"
+                : "flex min-h-[min(380px,52vh)] items-center justify-center px-3 py-10 sm:px-6"
+            }
             role="status"
           >
             <span className="inline-flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
@@ -3189,10 +3201,7 @@ export default function FileGrid({
                 </table>
               </div>
             ) : (
-            <div
-              data-selectable-grid
-              className={`relative grid ${gridGapClass} ${gridColsClass}`}
-            >
+            <div data-selectable-grid className={embeddedBrowseDriveGridClass}>
               {useFilteredScoped && filtersLoading && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 text-sm text-neutral-500 dark:bg-neutral-900/80 dark:text-neutral-400" aria-busy="true">
                   <span className="inline-flex items-center gap-2">
@@ -3219,7 +3228,7 @@ export default function FileGrid({
                     onDragStart={handleDragStart}
                     className={
                       [
-                        "h-full min-h-0 min-w-0 w-full max-w-full",
+                        embeddedBrowseGridItemShell,
                         canDragFolder && "cursor-grab active:cursor-grabbing",
                       ]
                         .filter(Boolean)
@@ -3275,7 +3284,7 @@ export default function FileGrid({
                     data-item-id={file.id}
                     draggable={!!file.driveId && !isPkg}
                     onDragStart={handleDragStart}
-                    className={`h-full min-h-0${!!file.driveId && !isPkg ? " cursor-grab active:cursor-grabbing" : ""}`}
+                    className={`${embeddedBrowseFileItemShell}${!!file.driveId && !isPkg ? " cursor-grab active:cursor-grabbing" : ""}`}
                   >
                     <FileCard
                       file={file}
@@ -3326,7 +3335,11 @@ export default function FileGrid({
             )
           ) : storageUploadSessionActiveHere && !useFilteredScoped ? (
             <div
-              className="flex min-h-[min(380px,52vh)] items-center justify-center px-3 py-10 sm:px-6"
+              className={
+                embeddedFolderBrowse
+                  ? "flex min-h-[10rem] items-center justify-center px-3 py-8 sm:px-6"
+                  : "flex min-h-[min(380px,52vh)] items-center justify-center px-3 py-10 sm:px-6"
+              }
               role="status"
               aria-live="polite"
             >
@@ -3345,7 +3358,13 @@ export default function FileGrid({
               </div>
             </div>
           ) : (
-            <div className="flex min-h-[min(380px,52vh)] items-center justify-center px-3 py-10 sm:px-6">
+            <div
+              className={
+                embeddedFolderBrowse
+                  ? "flex min-h-[12rem] items-center justify-center px-3 py-8 sm:px-6"
+                  : "flex min-h-[min(380px,52vh)] items-center justify-center px-3 py-10 sm:px-6"
+              }
+            >
               <div
                 role="region"
                 aria-label={isGalleryMediaDrive ? "Empty gallery media drive" : "Empty drive"}
