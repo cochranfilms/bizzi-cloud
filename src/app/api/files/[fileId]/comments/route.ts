@@ -10,8 +10,10 @@ import {
 } from "@/lib/file-access";
 import { createNotification } from "@/lib/notification-service";
 import {
+  allowedCommentVisibilityOptions,
   deriveFileCommentScope,
   snapshotAuthorRoleForFile,
+  type FileCommentVisibilityScope,
 } from "@/lib/file-comment-scope";
 import { NextResponse } from "next/server";
 
@@ -168,6 +170,10 @@ export async function POST(
 
   const body = await request.json().catch(() => ({}));
   const { body: commentBody, parentCommentId, videoTimestampSec: rawVideoTs } = body;
+  const rawVis =
+    (body.visibility_scope as string | undefined) ??
+    (body.visibilityScope as string | undefined) ??
+    null;
   const trimmed = typeof commentBody === "string" ? commentBody.trim() : "";
   if (!trimmed || trimmed.length > 2000) {
     return NextResponse.json({ error: "body required (max 2000 chars)" }, { status: 400 });
@@ -189,6 +195,17 @@ export async function POST(
 
   const scope = deriveFileCommentScope(fileData, auth.uid);
   if (!scope) return NextResponse.json({ error: "Invalid file" }, { status: 400 });
+
+  const visibilityChoices = allowedCommentVisibilityOptions(fileData, auth.uid);
+  let visibility_scope: FileCommentVisibilityScope = scope.visibility_scope;
+  if (rawVis != null && String(rawVis).trim()) {
+    const req = String(rawVis).trim() as FileCommentVisibilityScope;
+    const ok = visibilityChoices.some((o) => o.value === req);
+    if (!ok) {
+      return NextResponse.json({ error: "Invalid comment visibility choice" }, { status: 400 });
+    }
+    visibility_scope = req;
+  }
 
   const authorRoleSnapshot = await snapshotAuthorRoleForFile(auth.uid, fileData);
   const profileSnap = await db.collection("profiles").doc(auth.uid).get();
@@ -221,7 +238,7 @@ export async function POST(
     organization_id: scope.organization_id,
     personal_team_owner_id: scope.personal_team_owner_id,
     file_owner_id: scope.file_owner_id,
-    visibility_scope: scope.visibility_scope,
+    visibility_scope,
     body: trimmed.slice(0, 2000),
     video_timestamp_sec: videoTimestampSec,
     isEdited: false,
@@ -269,7 +286,7 @@ export async function POST(
     authorRoleSnapshot,
     workspace_type: scope.workspace_type,
     workspace_id: scope.workspace_id,
-    visibility_scope: scope.visibility_scope,
+    visibility_scope,
     body: doc.body,
     videoTimestampSec,
     isEdited: false,

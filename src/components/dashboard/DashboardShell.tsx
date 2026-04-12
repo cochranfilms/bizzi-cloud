@@ -10,8 +10,8 @@ import PendingInvitesBanner from "./PendingInvitesBanner";
 import TeamBrandingOnboardingGate from "./TeamBrandingOnboardingGate";
 import WorkspaceOnboardingEnforcement from "./WorkspaceOnboardingEnforcement";
 import BackgroundUploadIndicator from "./BackgroundUploadIndicator";
-import SupportHelpButton from "./SupportHelpButton";
 import GlobalDropZone from "./GlobalDropZone";
+import { FilesFilterTopChromeProvider } from "@/context/FilesFilterTopChromeContext";
 import { UppyUploadProvider } from "@/context/UppyUploadContext";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 import { useAuth } from "@/context/AuthContext";
@@ -102,7 +102,6 @@ export default function DashboardShell({
         <TeamBrandingOnboardingGate />
         <PendingInvitesBanner />
         <BackgroundUploadIndicator />
-        <SupportHelpButton />
 
         {/* Mobile right panel overlay */}
         {rightPanelOpen && (
@@ -116,23 +115,25 @@ export default function DashboardShell({
         {/* Main content + right panel row */}
         <div className="flex min-h-0 min-w-0 flex-1 gap-0 xl:gap-7">
           {/* Main vs workspace rail: xl-only gap widens the “lane” so page scroll isn’t confused with embedded panes */}
-          <div className="flex min-w-0 flex-1 flex-col">
-            {/* Mobile panel button */}
-            <div
-              className={`fixed z-30 xl:hidden left-[max(0.75rem,env(safe-area-inset-left))] ${mobilePanelBtnTop}`}
-            >
-              <button
-                type="button"
-                className="rounded-lg bg-white p-2 shadow-md ring-1 ring-neutral-200/80 dark:bg-neutral-800 dark:ring-neutral-700"
-                onClick={() => setRightPanelOpen(true)}
-                aria-label="Open panel"
+          <FilesFilterTopChromeProvider>
+            <div className="flex min-w-0 flex-1 flex-col">
+              {/* Mobile panel button */}
+              <div
+                className={`fixed z-30 xl:hidden left-[max(0.75rem,env(safe-area-inset-left))] ${mobilePanelBtnTop}`}
               >
-                <PanelRight className="h-5 w-5" />
-              </button>
-            </div>
+                <button
+                  type="button"
+                  className="rounded-lg bg-white p-2 shadow-md ring-1 ring-neutral-200/80 dark:bg-neutral-800 dark:ring-neutral-700"
+                  onClick={() => setRightPanelOpen(true)}
+                  aria-label="Open panel"
+                >
+                  <PanelRight className="h-5 w-5" />
+                </button>
+              </div>
 
-            {children}
-          </div>
+              {children}
+            </div>
+          </FilesFilterTopChromeProvider>
 
           {/* Right panel - desktop: always visible on xl; mobile: slide-out */}
           <div

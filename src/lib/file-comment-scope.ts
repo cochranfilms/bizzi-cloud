@@ -16,8 +16,27 @@ export interface FileCommentScopeFields {
 }
 
 /**
- * Derive immutable scope fields for a file_comment from backup_files row + author.
+ * UI + POST options for who can see a new comment. Server validates against this list.
+ * Personal file owners may choose a narrower or broader scope than the default note.
  */
+export function allowedCommentVisibilityOptions(
+  fileData: DocumentData | undefined,
+  authorUserId: string
+): { value: FileCommentVisibilityScope; label: string }[] {
+  const scope = deriveFileCommentScope(fileData, authorUserId);
+  if (!scope) return [];
+  if (scope.workspace_type === "organization" || scope.workspace_type === "team") {
+    return [{ value: "collaborators", label: "Workspace members" }];
+  }
+  if (authorUserId === scope.file_owner_id) {
+    return [
+      { value: "owner_only", label: "Only me" },
+      { value: "share_recipient", label: "Everyone with access" },
+    ];
+  }
+  return [{ value: "share_recipient", label: "Everyone with access" }];
+}
+
 export function deriveFileCommentScope(
   fileData: DocumentData | undefined,
   authorUserId: string

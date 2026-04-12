@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { getAuthToken } from "@/lib/auth-token";
 import { usePageVisibility } from "@/hooks/usePageVisibility";
-import type { Comment } from "@/types/collaboration";
+import type { Comment, FileCommentVisibilityScope } from "@/types/collaboration";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -44,6 +44,9 @@ export function useComments(fileId: string | null, options: UseCommentsOptions =
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [visibilityOptions, setVisibilityOptions] = useState<
+    { value: FileCommentVisibilityScope; label: string }[]
+  >([]);
 
   const fetchComments = useCallback(async () => {
     if (!fileId || !user) {
@@ -81,6 +84,52 @@ export function useComments(fileId: string | null, options: UseCommentsOptions =
     }
   }, [fileId, user, sortOrder]);
 
+  const fetchVisibilityOptions = useCallback(async () => {
+    if (!fileId || !user) {
+      setVisibilityOptions([]);
+      return;
+    }
+    try {
+      const token = await getAuthToken();
+      if (!token) {
+        setVisibilityOptions([]);
+        return;
+      }
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(
+        `${base}/api/files/${encodeURIComponent(fileId)}/comment-composer`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) {
+        setVisibilityOptions([]);
+        return;
+      }
+      const data = (await res.json()) as {
+        visibilityOptions?: { value: string; label: string }[];
+      };
+      const raw = data.visibilityOptions ?? [];
+      setVisibilityOptions(
+        raw
+          .filter(
+            (o) =>
+              o.value === "owner_only" ||
+              o.value === "collaborators" ||
+              o.value === "share_recipient"
+          )
+          .map((o) => ({
+            value: o.value as FileCommentVisibilityScope,
+            label: o.label,
+          }))
+      );
+    } catch {
+      setVisibilityOptions([]);
+    }
+  }, [fileId, user]);
+
+  useEffect(() => {
+    void fetchVisibilityOptions();
+  }, [fetchVisibilityOptions]);
+
   useEffect(() => {
     setLoading(true);
     fetchComments();
@@ -90,7 +139,12 @@ export function useComments(fileId: string | null, options: UseCommentsOptions =
   }, [fileId, fetchComments, isVisible]);
 
   const addComment = useCallback(
-    async (body: string, parentCommentId?: string | null, videoTimestampSec?: number | null) => {
+    async (
+      body: string,
+      parentCommentId?: string | null,
+      videoTimestampSec?: number | null,
+      visibilityScope?: FileCommentVisibilityScope | null
+    ) => {
       if (!fileId || !user) return null;
       const token = await getAuthToken(true);
       if (!token) return null;
@@ -101,6 +155,13 @@ export function useComments(fileId: string | null, options: UseCommentsOptions =
         };
         if (videoTimestampSec != null && Number.isFinite(videoTimestampSec)) {
           payload.videoTimestampSec = videoTimestampSec;
+        }
+        if (
+          visibilityScope === "owner_only" ||
+          visibilityScope === "collaborators" ||
+          visibilityScope === "share_recipient"
+        ) {
+          payload.visibility_scope = visibilityScope;
         }
         const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/comments`, {
           method: "POST",
@@ -191,6 +252,7 @@ export function useComments(fileId: string | null, options: UseCommentsOptions =
     comments,
     loading,
     error,
+    visibilityOptions,
     addComment,
     editComment,
     deleteComment,

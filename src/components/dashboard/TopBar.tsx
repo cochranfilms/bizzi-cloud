@@ -411,9 +411,7 @@ export default function TopBar({
   /** Keep Layout + New on one row so they don’t wrap under TopNavbar while browsing Storage. */
   const hubActionsNoWrap = isWorkspaceHomeHub;
 
-  const actionsRow = (
-    <>
-      {filesFilterTopChrome}
+  const topBarRightCluster = (
       <div
         className={`flex min-w-0 w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end sm:gap-3 md:gap-4 ${
           hubActionsNoWrap ? "sm:flex-nowrap sm:overflow-x-auto sm:[scrollbar-width:thin]" : "sm:flex-wrap"
@@ -576,8 +574,30 @@ export default function TopBar({
         )}
         </div>
       </div>
+  );
+
+  /** Home / team / desktop hub: filters + search far left; Layout + New stay right. */
+  const homeHubToolbarRow = (
+    <div className="flex min-h-12 w-full flex-col gap-3 sm:min-h-12 sm:flex-row sm:items-center sm:justify-between sm:gap-3 md:gap-4">
+      <div className="order-2 flex min-w-0 flex-1 items-center justify-start sm:order-1">
+        {filesFilterTopChrome}
+      </div>
+      <div className="order-1 flex w-full shrink-0 justify-end sm:order-2 sm:w-auto">
+        {topBarRightCluster}
+      </div>
+    </div>
+  );
+
+  const flatFilesToolbarRow = (
+    <>
+      {filesFilterTopChrome}
+      {topBarRightCluster}
     </>
   );
+
+  const toolbarActionsWrapClass = `flex min-w-0 flex-1 flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:gap-3 md:gap-4 ${
+    hubActionsNoWrap ? "sm:flex-nowrap sm:overflow-x-auto sm:[scrollbar-width:thin]" : "sm:flex-wrap"
+  }`;
 
   return (
     <div
@@ -597,13 +617,17 @@ export default function TopBar({
                 <div className="hidden sm:block sm:flex-1" aria-hidden />
               )}
               <div
-              className={`flex min-w-0 w-full items-center justify-end gap-2 pb-0.5 sm:w-auto sm:max-w-none sm:gap-3 md:gap-4 ${
+              className={`flex min-w-0 w-full flex-1 items-stretch gap-2 pb-0.5 sm:max-w-none sm:gap-3 md:gap-4 ${
                 hubActionsNoWrap
                   ? "flex-nowrap overflow-x-auto [scrollbar-width:thin]"
                   : "flex-nowrap overflow-x-auto [scrollbar-width:thin] sm:flex-wrap sm:overflow-visible"
-              }`}
+              } ${isWorkspaceHomeHub ? "" : "items-center justify-end"}`}
             >
-                {actionsRow}
+                {isWorkspaceHomeHub ? homeHubToolbarRow : (
+                  <div className="flex w-full items-center justify-end gap-2 sm:gap-3 md:gap-4">
+                    {flatFilesToolbarRow}
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex justify-center border-t border-neutral-200/70 pt-3 dark:border-neutral-800/70">
@@ -613,13 +637,11 @@ export default function TopBar({
         ) : (
           <div className="flex min-h-12 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             {titleRow}
-            <div
-              className={`flex min-w-0 flex-1 flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-3 md:gap-4 ${
-                hubActionsNoWrap ? "sm:flex-nowrap sm:overflow-x-auto sm:[scrollbar-width:thin]" : "sm:flex-wrap"
-              }`}
-            >
-              {actionsRow}
-            </div>
+            {isWorkspaceHomeHub ? (
+              <div className="min-w-0 w-full flex-1">{homeHubToolbarRow}</div>
+            ) : (
+              <div className={`${toolbarActionsWrapClass} sm:justify-end`}>{flatFilesToolbarRow}</div>
+            )}
           </div>
         )}
       </div>

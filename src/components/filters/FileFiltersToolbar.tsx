@@ -35,7 +35,7 @@ export function FileFiltersTopBarChrome({
 
   return (
     <div
-      className={`flex min-w-0 w-full max-w-full items-center gap-2 sm:w-auto sm:max-w-none sm:justify-end ${className}`}
+      className={`flex min-w-0 w-full max-w-full items-center justify-start gap-2 sm:w-auto sm:max-w-none ${className}`}
     >
       <button
         type="button"

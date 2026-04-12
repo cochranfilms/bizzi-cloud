@@ -11,6 +11,7 @@ import RightPanel from "@/components/dashboard/RightPanel";
 import PendingInvitesBanner from "@/components/dashboard/PendingInvitesBanner";
 import BackgroundUploadIndicator from "@/components/dashboard/BackgroundUploadIndicator";
 import GlobalDropZone from "@/components/dashboard/GlobalDropZone";
+import { FilesFilterTopChromeProvider } from "@/context/FilesFilterTopChromeContext";
 import { NLEMountPanel } from "./NLEMountPanel";
 
 const RightPanelContext = createContext<{
@@ -83,33 +84,35 @@ export default function DesktopShell({
             </aside>
           )}
 
-          <div className="flex min-w-0 flex-1 flex-col">
-            {/* Floating buttons on narrow screens: left = mount panel (Editor/Full Frame only), right = backup panel */}
-            {hasEditor && !mountPanelOpen && (
-              <div className="fixed left-4 top-16 z-30 md:hidden">
+          <FilesFilterTopChromeProvider>
+            <div className="flex min-w-0 flex-1 flex-col">
+              {/* Floating buttons on narrow screens: left = mount panel (Editor/Full Frame only), right = backup panel */}
+              {hasEditor && !mountPanelOpen && (
+                <div className="fixed left-4 top-16 z-30 md:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setMountPanelOpen(true)}
+                    className="rounded-lg bg-white p-2 shadow text-bizzi-blue hover:bg-bizzi-blue/10 dark:bg-neutral-800 dark:text-bizzi-cyan dark:hover:bg-bizzi-blue/20"
+                    aria-label="Open NLE Mount panel"
+                    title="Mount Drive"
+                  >
+                    <HardDrive className="h-5 w-5" />
+                  </button>
+                </div>
+              )}
+              <div className="fixed right-4 top-16 z-30 xl:hidden">
                 <button
                   type="button"
-                  onClick={() => setMountPanelOpen(true)}
-                  className="rounded-lg bg-white p-2 shadow text-bizzi-blue hover:bg-bizzi-blue/10 dark:bg-neutral-800 dark:text-bizzi-cyan dark:hover:bg-bizzi-blue/20"
-                  aria-label="Open NLE Mount panel"
-                  title="Mount Drive"
+                  className="rounded-lg bg-white p-2 shadow dark:bg-neutral-800"
+                  onClick={() => setRightPanelOpen(true)}
+                  aria-label="Open panel"
                 >
-                  <HardDrive className="h-5 w-5" />
+                  <PanelRight className="h-5 w-5" />
                 </button>
               </div>
-            )}
-            <div className="fixed right-4 top-16 z-30 xl:hidden">
-              <button
-                type="button"
-                className="rounded-lg bg-white p-2 shadow dark:bg-neutral-800"
-                onClick={() => setRightPanelOpen(true)}
-                aria-label="Open panel"
-              >
-                <PanelRight className="h-5 w-5" />
-              </button>
+              {children}
             </div>
-            {children}
-          </div>
+          </FilesFilterTopChromeProvider>
 
           <div
             className={`fixed bottom-0 right-0 top-14 z-40 w-56 transform transition-transform xl:static xl:top-0 xl:min-h-0 xl:translate-x-0 ${

@@ -357,6 +357,8 @@ export default function FileGrid({
   );
   const threeTabFilesLanding =
     allFilesFlatLanding && inlineStorageOnFilesPage && hasInlineStorageDrive;
+  /** Home-embedded Storage + /files landing: surface filters in TopBar via context. */
+  const showFilesFilterTopBarChrome = allFilesFlatLanding || embeddedHomeStorage;
   const isBizziCloudBaseDrive = (name: string) => {
     const b = teamAwareDriveName(name);
     return b === "Storage" || b === "RAW" || b === "Gallery Media";
@@ -647,7 +649,7 @@ export default function FileGrid({
   );
 
   useEffect(() => {
-    if (!setFilesTopBarChrome || !allFilesFlatLanding) return;
+    if (!setFilesTopBarChrome || !showFilesFilterTopBarChrome) return;
     setFilesTopBarChrome(
       <FileFiltersTopBarChrome
         searchValue={(filterState.search as string) ?? ""}
@@ -660,7 +662,7 @@ export default function FileGrid({
     return () => setFilesTopBarChrome(null);
   }, [
     setFilesTopBarChrome,
-    allFilesFlatLanding,
+    showFilesFilterTopBarChrome,
     filterState.search,
     handleSearchChange,
     quickFiltersOpen,
@@ -2530,7 +2532,7 @@ export default function FileGrid({
         }`}
       >
         <div className="space-y-3">
-          {quickFiltersOpen && allFilesFlatLanding && (
+          {quickFiltersOpen && showFilesFilterTopBarChrome && (
             <FileFiltersExpandedStrip
               filterState={filterState}
               setFilter={setFilter}

@@ -7,7 +7,7 @@ import { useThemeResolved } from "@/context/ThemeContext";
 import { useImmersiveVideoCommentOptional } from "@/context/ImmersiveVideoCommentContext";
 import AddCommentInput from "./AddCommentInput";
 import CommentItem from "./CommentItem";
-import type { Comment } from "@/types/collaboration";
+import type { Comment, FileCommentVisibilityScope } from "@/types/collaboration";
 
 interface FileCommentsPanelProps {
   fileId: string;
@@ -78,6 +78,7 @@ export default function FileCommentsPanel({
     comments,
     loading,
     error,
+    visibilityOptions,
     addComment,
     editComment,
     deleteComment,
@@ -86,8 +87,17 @@ export default function FileCommentsPanel({
   const topLevel = comments.filter((c) => !c.parentCommentId);
   const currentUserId = user?.uid ?? "";
 
-  const handleAdd = async (body: string, videoTimestampSec?: number | null) => {
-    const result = await addComment(body, null, videoTimestampSec ?? undefined);
+  const handleAdd = async (
+    body: string,
+    videoTimestampSec?: number | null,
+    visibilityScope?: FileCommentVisibilityScope | null
+  ) => {
+    const result = await addComment(
+      body,
+      null,
+      videoTimestampSec ?? undefined,
+      visibilityScope ?? undefined
+    );
     return !!result;
   };
 
@@ -130,7 +140,7 @@ export default function FileCommentsPanel({
       {user ? (
         <AddCommentInput
           onSubmit={handleAdd}
-          placeholder="Add comment…"
+          placeholder="Add comment..."
           autoFocus={false}
           immersiveChrome={immersiveChrome}
           immersiveIsDark={immersiveChrome ? immersiveIsDark : undefined}
@@ -139,6 +149,7 @@ export default function FileCommentsPanel({
             user.displayName?.trim() || user.email?.split("@")[0] || user.uid.slice(0, 8)
           }
           immersiveVideoComment={immersiveChrome ? immersiveVideoComment : null}
+          visibilityOptions={visibilityOptions}
         />
       ) : (
         <p

@@ -114,14 +114,73 @@ function appendV2PathSegmentTiles(
   }
 }
 
-/** Root `storage_folders` rows for folder model v2 (e.g. home “Bizzi Cloud Folders” + migration-created folders). */
+/** Cap promoted nested folders per drive (direct children of any root) — keeps home strip fast. */
+const MAX_PROMOTED_NESTED_FOLDERS_PER_DRIVE = 24;
+
+async function v2FolderDocToRootRow(
+  db: Firestore,
+  driveId: string,
+  f: Record<string, unknown> & { id?: string }
+): Promise<StorageFolderRootRow | null> {
+  const fid = String(f.id ?? "").trim();
+  const fname = String(f.name ?? "").trim();
+  if (!fid || !fname) return null;
+
+  const { folders: subFolders } = await listStorageFolderChildren(db, driveId, fid);
+  const filesSnap = await db
+    .collection("backup_files")
+    .where("linked_drive_id", "==", driveId)
+    .where("folder_id", "==", fid)
+    .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+    .select()
+    .limit(500)
+    .get();
+
+  const itemCount = subFolders.length + filesSnap.size;
+  const ver = f.version;
+  const roleRaw = f.system_folder_role;
+  const system_folder_role =
+    typeof roleRaw === "string" && roleRaw.trim() ? roleRaw.trim() : undefined;
+  const protected_deletion = f.protected_deletion === true;
+  let cover_file: StorageFolderRootRow["cover_file"] = null;
+  try {
+    cover_file = await getStorageFolderCoverFile(db, driveId, fid);
+  } catch {
+    cover_file = null;
+  }
+  return {
+    drive_id: driveId,
+    name: fname,
+    path: "",
+    file_count: itemCount,
+    storage_folder_id: fid,
+    storage_folder_version: typeof ver === "number" ? ver : Number(ver ?? 1),
+    operation_state: typeof f.operation_state === "string" ? f.operation_state : undefined,
+    lifecycle_state: typeof f.lifecycle_state === "string" ? f.lifecycle_state : undefined,
+    ...(system_folder_role ? { system_folder_role } : {}),
+    ...(protected_deletion ? { protected_deletion: true as const } : {}),
+    ...(f.updated_at != null ? { updated_at: f.updated_at } : {}),
+    ...(f.created_at != null ? { created_at: f.created_at } : {}),
+    cover_file,
+  };
+}
+
+/**
+ * Root `storage_folders` rows for folder model v2 (home “Bizzi Cloud Folders”).
+ * Also promotes **direct children** of those roots into the same list so nested folders
+ * appear alongside top-level folders and participate in the global recency sort.
+ */
 async function appendV2StorageRootFolderRows(
   db: Firestore,
   driveId: string,
   folders: StorageFolderRootRow[]
 ): Promise<void> {
   const { folders: v2Roots } = await listStorageFolderChildren(db, driveId, null);
-  for (const f of v2Roots) {
+  const pushedFolderIds = new Set<string>();
+  const nestedCandidates: Record<string, unknown>[] = [];
+
+  for (const raw of v2Roots) {
+    const f = raw as Record<string, unknown> & { id?: string };
     const fid = String(f.id ?? "").trim();
     const fname = String(f.name ?? "").trim();
     if (!fid || !fname) continue;
@@ -138,10 +197,10 @@ async function appendV2StorageRootFolderRows(
 
     const itemCount = subFolders.length + filesSnap.size;
     const ver = f.version;
-    const roleRaw = (f as { system_folder_role?: unknown }).system_folder_role;
+    const roleRaw = f.system_folder_role;
     const system_folder_role =
       typeof roleRaw === "string" && roleRaw.trim() ? roleRaw.trim() : undefined;
-    const protected_deletion = (f as { protected_deletion?: unknown }).protected_deletion === true;
+    const protected_deletion = f.protected_deletion === true;
     let cover_file: StorageFolderRootRow["cover_file"] = null;
     try {
       cover_file = await getStorageFolderCoverFile(db, driveId, fid);
@@ -163,6 +222,27 @@ async function appendV2StorageRootFolderRows(
       ...(f.created_at != null ? { created_at: f.created_at } : {}),
       cover_file,
     });
+    pushedFolderIds.add(fid);
+
+    for (const sub of subFolders) {
+      const doc = sub as Record<string, unknown> & { id?: string };
+      const sid = String(doc.id ?? "").trim();
+      if (!sid || pushedFolderIds.has(sid)) continue;
+      nestedCandidates.push(doc);
+    }
+  }
+
+  nestedCandidates.sort((a, b) => compareStorageFolderRowsTransfersRootFirst(a, b));
+
+  let nestedAdded = 0;
+  for (const doc of nestedCandidates) {
+    if (nestedAdded >= MAX_PROMOTED_NESTED_FOLDERS_PER_DRIVE) break;
+    const sid = String((doc as { id?: string }).id ?? "").trim();
+    if (!sid || pushedFolderIds.has(sid)) continue;
+    pushedFolderIds.add(sid);
+    const row = await v2FolderDocToRootRow(db, driveId, { ...doc, id: sid });
+    if (row) folders.push(row);
+    nestedAdded++;
   }
 }
 
