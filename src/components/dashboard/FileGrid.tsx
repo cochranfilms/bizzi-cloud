@@ -106,6 +106,7 @@ import {
 import { resolveUploadDestination } from "@/lib/upload-destination-resolve";
 import { useUppyUpload } from "@/context/UppyUploadContext";
 import { workspaceQuickActionsRegistry } from "@/lib/workspace-quick-actions-registry";
+import { registerOptimisticStorageGridListener } from "@/lib/storage-folder-optimistic";
 import {
   compareFolderItemsTransfersRootFirst,
   storageFolderRowRecencyMs,
@@ -925,6 +926,43 @@ export default function FileGrid({
     void loadDriveFiles(currentDrive.id);
     void refetch();
   }, [currentDrive, loadDriveFiles, refetch]);
+
+  useEffect(() => {
+    return registerOptimisticStorageGridListener((payload) => {
+      if (!currentDrive?.id || payload.linked_drive_id !== currentDrive.id) return;
+      const parent = storageParentFolderId ?? null;
+      const pParent = payload.parent_folder_id ?? null;
+      if (parent !== pParent) return;
+      const meta = linkedDrives.find((d) => d.id === currentDrive.id);
+      if (!isStorageFoldersV2PillarDrive(meta)) return;
+      const pathNorm = (currentDrivePath ?? "").replace(/^\/+/, "");
+      if (pathNorm && storageParentFolderId == null) {
+        return;
+      }
+      const now = Date.now();
+      const key = buildStorageV2FolderPinId(currentDrive.id, payload.id);
+      setV2StorageSubfolders((prev) => {
+        if (prev.some((f) => f.storageFolderId === payload.id)) return prev;
+        const item: FolderItem = {
+          name: payload.name,
+          type: "folder",
+          key,
+          items: 0,
+          virtualFolder: true,
+          driveId: currentDrive.id,
+          storageFolderId: payload.id,
+          storageLinkedDriveId: currentDrive.id,
+          storageFolderVersion: 1,
+          storageFolderOperationState: "ready",
+          hideShare: true,
+          folderRecencyMs: now,
+        };
+        const next = [...prev, item];
+        next.sort(compareFolderItemsTransfersRootFirst);
+        return next;
+      });
+    });
+  }, [currentDrive?.id, currentDrivePath, storageParentFolderId, linkedDrives]);
 
   const openDrive = useCallback(
     (id: string, name: string, pathInsideDrive = "", storageParent?: string | null) => {

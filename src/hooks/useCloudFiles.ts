@@ -59,6 +59,7 @@ import {
   resolveBackupFileLifecycleState,
 } from "@/lib/backup-file-lifecycle";
 import {
+  compareFolderItemsTransfersRootFirst,
   compareStorageFolderRowsTransfersRootFirst,
   storageFolderRowRecencyMs,
 } from "@/lib/storage-folders/folder-display-order";
@@ -68,6 +69,7 @@ import {
   scheduleCloudFilesPostMutationRefresh,
 } from "@/lib/cloud-files-post-mutation-refresh";
 import { dedupeScopedPillarDrives } from "@/lib/linked-drive-pillar-dedupe";
+import { registerOptimisticStorageHomeRootListener } from "@/lib/storage-folder-optimistic";
 
 async function apiErrorMessage(res: Response, fallback: string): Promise<string> {
   const data = await res.json().catch(() => ({}));
@@ -799,6 +801,47 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     driveFoldersRef.current = driveFolders;
   }, [driveFolders]);
   const [storageTopFolders, setStorageTopFolders] = useState<StorageTopFolderEntry[]>([]);
+  useEffect(() => {
+    return registerOptimisticStorageHomeRootListener((payload) => {
+      const now = Date.now();
+      setStorageTopFolders((prev) => {
+        if (
+          prev.some(
+            (e) => e.storageFolderId === payload.id && e.driveId === payload.linked_drive_id
+          )
+        ) {
+          return prev;
+        }
+        const row: StorageTopFolderEntry = {
+          driveId: payload.linked_drive_id,
+          name: payload.name,
+          pathPrefix: "",
+          itemCount: 0,
+          storageFolderId: payload.id,
+          storageFolderVersion: 1,
+          storageFolderOperationState: "ready",
+          coverFile: null,
+          folderRecencyMs: now,
+        };
+        const next = [...prev, row];
+        next.sort((a, b) =>
+          compareFolderItemsTransfersRootFirst(
+            {
+              name: a.name,
+              systemFolderRole: a.systemFolderRole ?? null,
+              folderRecencyMs: a.folderRecencyMs,
+            },
+            {
+              name: b.name,
+              systemFolderRole: b.systemFolderRole ?? null,
+              folderRecencyMs: b.folderRecencyMs,
+            }
+          )
+        );
+        return next;
+      });
+    });
+  }, []);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [recentUploads, setRecentUploads] = useState<RecentFile[]>([]);
   const [recentUploadsLoading, setRecentUploadsLoading] = useState(false);

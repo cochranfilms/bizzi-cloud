@@ -43,6 +43,7 @@ import {
   isStorageFoldersV2PillarDrive,
 } from "@/lib/linked-drive-folder-model";
 import { workspaceQuickActionsRegistry } from "@/lib/workspace-quick-actions-registry";
+import { notifyStorageFolderCreated } from "@/lib/storage-folder-optimistic";
 import { usePinned } from "@/hooks/usePinned";
 import { buildStorageV2FolderPinId } from "@/lib/storage-v2-folder-pin";
 
@@ -183,6 +184,15 @@ export default function TopBar({
           const data = await res.json().catch(() => ({}));
           throw new Error((data.error as string) ?? "Could not create folder");
         }
+        const created = (await res.json().catch(() => ({}))) as { id?: string };
+        if (typeof created.id === "string" && created.id) {
+          notifyStorageFolderCreated({
+            linked_drive_id: currentDriveId,
+            parent_folder_id: storageParentFolderId ?? null,
+            id: created.id,
+            name: trimmed || "Untitled folder",
+          });
+        }
         bumpStorageVersion();
         return;
       }
@@ -205,6 +215,15 @@ export default function TopBar({
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           throw new Error((data.error as string) ?? "Could not create folder");
+        }
+        const createdRoot = (await res.json().catch(() => ({}))) as { id?: string };
+        if (typeof createdRoot.id === "string" && createdRoot.id) {
+          notifyStorageFolderCreated({
+            linked_drive_id: storageV2.id,
+            parent_folder_id: null,
+            id: createdRoot.id,
+            name: trimmed || "Untitled folder",
+          });
         }
         bumpStorageVersion();
         return;
