@@ -166,6 +166,7 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
           proudlyDisplayPoweredByUppy={false}
           height={hasFiles ? 120 : 56}
           showSelectedFiles={false}
+          hideUploadButton
           disableThumbnailGenerator
           note={null}
           fileManagerSelectionType="both"

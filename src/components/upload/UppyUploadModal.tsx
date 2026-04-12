@@ -7,6 +7,9 @@ import {
   useState,
   useCallback,
   type CSSProperties,
+  type RefObject,
+  type Dispatch,
+  type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
 import Uppy from "@uppy/core";
@@ -44,7 +47,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { useUppyBizziThemeVariables } from "@/hooks/useUppyBizziTheme";
 import type { GalleryManageUploadLifecycleEvent } from "@/lib/gallery-manage-upload-lifecycle";
 import { dispatchStorageUploadComplete } from "@/lib/storage-upload-complete-event";
-import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
+import type { UploadDockSummary } from "@/context/UppyUploadContext";
 import "@/styles/uppy-bizzi-theme.css";
 import "@/styles/uppy-bizzi-premium.css";
 
@@ -112,6 +115,13 @@ function resumeUploadIfNeeded(uppy: Uppy): void {
   );
   if (anyInFlight) {
     uppy.upload().catch(() => {});
+    return;
+  }
+  const anyQueued = Object.values(files).some(
+    (f) => !f.error && f.progress?.uploadComplete !== true
+  );
+  if (anyQueued) {
+    uppy.upload().catch(() => {});
   }
 }
 
@@ -127,6 +137,10 @@ function uppyHasPendingUploadWork(uppy: Uppy): boolean {
 interface UppyUploadModalProps {
   open: boolean;
   onClose: () => void;
+  uploadQueueExpanded: boolean;
+  onUploadQueueExpandedChange: (expanded: boolean) => void;
+  workspaceUploadAnchorRef: RefObject<HTMLDivElement | null>;
+  onDockSummaryChange: Dispatch<SetStateAction<UploadDockSummary>>;
   driveId: string;
   pathPrefix?: string;
   storageFolderId?: string | null;
@@ -155,6 +169,10 @@ interface UppyUploadModalProps {
 export default function UppyUploadModal({
   open,
   onClose,
+  uploadQueueExpanded,
+  onUploadQueueExpandedChange,
+  workspaceUploadAnchorRef,
+  onDockSummaryChange,
   driveId,
   pathPrefix = "",
   storageFolderId = null,
@@ -191,9 +209,16 @@ export default function UppyUploadModal({
   onGalleryManageUploadLifecycleRef.current = onGalleryManageUploadLifecycle;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const onDockSummaryChangeRef = useRef(onDockSummaryChange);
+  onDockSummaryChangeRef.current = onDockSummaryChange;
 
   const [ready, setReady] = useState(false);
-  const [expanded, setExpanded] = useState(true);
+  const [panelPlacement, setPanelPlacement] = useState<{
+    top: number;
+    right: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
   const [panelMetrics, setPanelMetrics] = useState<UploadPanelMetrics>(DEFAULT_PANEL_METRICS);
   const [progress, setProgress] = useState({
     bytesUploaded: 0,
@@ -275,6 +300,38 @@ export default function UppyUploadModal({
       window.visualViewport?.removeEventListener("resize", update);
     };
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPanelPlacement(null);
+      return;
+    }
+    const measure = () => {
+      const el = workspaceUploadAnchorRef.current;
+      if (!el) {
+        setPanelPlacement({
+          top: Math.max(8, window.innerHeight * 0.12),
+          right: 8,
+          width: Math.min(448, Math.max(280, window.innerWidth - 24)),
+          maxHeight: Math.min(560, window.innerHeight * 0.78),
+        });
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      const width = Math.max(280, Math.min(448, r.left - 16));
+      const top = Math.max(8, r.top);
+      const right = Math.max(8, window.innerWidth - r.right);
+      const maxHeight = Math.min(560, window.innerHeight - top - 12);
+      setPanelPlacement({ top, right, width, maxHeight });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("resize", measure);
+    };
+  }, [open, uploadQueueExpanded, workspaceUploadAnchorRef]);
 
   useEffect(() => {
     if (!open) {
@@ -436,6 +493,12 @@ export default function UppyUploadModal({
         completedCount,
         failedCount,
         allComplete,
+      });
+      onDockSummaryChangeRef.current({
+        fileCount: files.length,
+        uploadingCount,
+        allComplete: files.length === 0 ? true : allComplete,
+        hasFailures: failedCount > 0,
       });
     };
 
@@ -934,15 +997,9 @@ export default function UppyUploadModal({
     if (!open || !ready || !uppyRef.current || pendingFiles.length === 0) return;
     const batch = [...pendingFiles];
     consumePending();
-    setExpanded(true);
+    onUploadQueueExpandedChange(true);
     void runChunkedAddRef.current(batch);
-  }, [open, ready, pendingFiles, consumePending]);
-
-  const handlePanelClose = useCallback(() => {
-    ingestAbortRef.current?.abort();
-    if (uppyRef.current) revokeAllUppyPreviewsFromUppy(uppyRef.current);
-    onClose();
-  }, [onClose]);
+  }, [open, ready, pendingFiles, consumePending, onUploadQueueExpandedChange]);
 
   if (!open) return null;
 
@@ -970,172 +1027,137 @@ export default function UppyUploadModal({
             : "Upload complete";
 
   /**
-   * z-[110]: above dashboard TopNavbar/DesktopTopNavbar (z-[60]) and typical sheets; with GlobalDropZone (z-[100]) DOM order still favors this node after mount.
-   * max-height: tighter reserve on narrow viewports (~5.5rem); sm+ uses ~7.5rem for workspace nav + gap. Safe areas for notched devices.
-   * Portal: avoids clipping from any ancestor overflow/transform while staying fixed to the viewport.
+   * Fixed beside the Workspace rail; z below dashboard modals (see DashboardColorsModal z-[120]).
+   * When the queue is collapsed, the panel stays mounted off-screen so uploads keep running.
    */
+  const place = panelPlacement;
+  const queueHidden = !uploadQueueExpanded;
   const shell = (
     <div
-      className="bizzi-uppy-theme bizzi-upload-panel-shell fixed bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-[max(0.5rem,env(safe-area-inset-left))] right-[max(0.5rem,env(safe-area-inset-right))] z-[110] flex max-h-[min(92dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-5.5rem))] w-auto max-w-none flex-col overflow-hidden rounded-xl border sm:left-[max(1rem,env(safe-area-inset-left))] sm:right-auto sm:max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-7.5rem))] sm:w-[min(48rem,calc(100vw-2rem))] sm:rounded-2xl"
+      className="bizzi-uppy-theme bizzi-upload-panel-shell flex max-h-[min(85dvh,560px)] flex-col overflow-hidden rounded-xl border shadow-lg sm:rounded-2xl"
       style={{
         ...(uppyChromeVars as CSSProperties),
         backgroundColor: "var(--bizzi-upload-workspace-bg)",
         color: "var(--bizzi-upload-text)",
+        position: "fixed",
+        ...(place
+          ? {
+              top: place.top,
+              right: place.right,
+              width: place.width,
+              maxHeight: place.maxHeight,
+              zIndex: queueHidden ? 0 : 105,
+              transform: queueHidden ? "translateX(calc(100vw + 64px))" : undefined,
+              opacity: queueHidden ? 0 : 1,
+              pointerEvents: queueHidden ? "none" : "auto",
+            }
+          : {
+              top: 12,
+              right: 12,
+              width: Math.min(448, typeof window !== "undefined" ? window.innerWidth - 24 : 448),
+              maxHeight: 520,
+              zIndex: queueHidden ? 0 : 105,
+              transform: queueHidden ? "translateX(calc(100vw + 64px))" : undefined,
+              opacity: queueHidden ? 0 : 1,
+              pointerEvents: queueHidden ? "none" : "auto",
+            }),
       }}
       data-uppy-theme={uppyDataTheme}
       role="status"
       aria-live="polite"
       aria-label="Upload panel"
+      aria-hidden={queueHidden}
     >
-      {/* Collapsible header - always visible */}
-      <button
-        type="button"
-        onClick={() => setExpanded((e) => !e)}
-        className="bizzi-upload-panel-header flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-[background-color] duration-200 sm:gap-3 sm:px-4 sm:py-3"
+      <div
+        className="border-b px-3 py-2.5 sm:px-4"
+        style={{ borderColor: "var(--bizzi-upload-divider)" }}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-          <div
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border sm:h-10 sm:w-10 sm:rounded-xl ${
-              allComplete && hasFiles ? "border-emerald-500/35 bg-emerald-500/12" : "border-transparent"
-            }`}
-            style={
-              allComplete && hasFiles
-                ? undefined
-                : {
-                    backgroundColor: "var(--bizzi-uppy-primary-muted)",
-                    borderColor: "var(--bizzi-upload-border-subtle)",
-                  }
-            }
-          >
-            {allComplete && hasFiles ? (
-              <Check className="h-[18px] w-[18px] text-emerald-600 dark:text-emerald-400" />
-            ) : hasFiles && uploadingCount === 0 && completedCount === 0 ? (
-              <Upload
-                className="h-[18px] w-[18px]"
-                style={{ color: "var(--bizzi-uppy-primary)" }}
-                aria-hidden
-              />
-            ) : hasFiles ? (
-              <Loader2
-                className="h-[18px] w-[18px] animate-spin"
-                style={{ color: "var(--bizzi-uppy-primary)" }}
-                aria-hidden
-              />
-            ) : (
-              <Upload
-                className="h-[18px] w-[18px]"
-                style={{ color: "var(--bizzi-uppy-primary)" }}
-                aria-hidden
-              />
-            )}
-          </div>
-          <div className="min-w-0">
-            {destinationMode === "creator_raw" && lockedDestination ? (
-              <>
-                <span className="bizzi-upload-panel-eyebrow block max-sm:text-[9px] max-sm:tracking-[0.16em]">Creator RAW</span>
-                <p className="truncate text-[0.875rem] font-semibold tracking-tight text-[var(--bizzi-upload-text)] sm:text-[0.9375rem]">
-                  Uploading to Creator RAW
-                </p>
-                <p className="bizzi-upload-panel-subtitle mt-0.5 line-clamp-2 text-[11px] leading-snug sm:line-clamp-none sm:truncate sm:text-xs">
-                  Stored in {(targetDriveName || driveName || "RAW").trim()} · source footage and LUT preview workflow
-                </p>
-              </>
-            ) : (
-              <>
-                <span className="bizzi-upload-panel-eyebrow block max-sm:text-[9px] max-sm:tracking-[0.16em]">Upload</span>
-                <p className="truncate text-[0.875rem] font-semibold tracking-tight text-[var(--bizzi-upload-text)] sm:text-[0.9375rem]">
-                  {headerLabel}
-                </p>
-              </>
-            )}
-            <p className="bizzi-upload-panel-subtitle mt-0.5 text-[11px] sm:text-xs">
-              {hasFiles
-                ? `${formatBytes(bytesUploaded)} / ${formatBytes(bytesTotal)}${
-                    fileCount > 0 ? ` · ${completedCount} of ${fileCount} files` : ""
-                  }`
-                : "Drop files or click to browse"}
+        {destinationMode === "creator_raw" && lockedDestination ? (
+          <>
+            <span className="bizzi-upload-panel-eyebrow block text-[9px] tracking-[0.16em]">Creator RAW</span>
+            <p className="truncate text-[0.875rem] font-semibold tracking-tight text-[var(--bizzi-upload-text)] sm:text-[0.9375rem]">
+              Uploading to Creator RAW
             </p>
-            {hasFiles && hasFailures && uploadingCount > 0 ? (
-              <p className="mt-1 text-[11px] font-medium text-amber-800 dark:text-amber-200/95 sm:text-xs">
-                Some files failed. Your other files are still uploading.
-              </p>
-            ) : null}
-            {(workspaceName ||
-              scopeLabel ||
-              driveName ||
-              (destinationMode === "storage" && !galleryId)) && (
-              <div className="bizzi-upload-panel-meta mt-2 flex w-full min-w-0 flex-col gap-2 text-[11px] sm:text-xs">
-                {destinationMode === "storage" && !galleryId ? (
-                  <div
-                    className="w-full min-w-0 rounded-xl border px-3 py-2.5 sm:px-3.5 sm:py-3"
-                    style={{
-                      borderColor: "var(--bizzi-upload-border-subtle)",
-                      backgroundColor:
-                        "color-mix(in srgb, var(--bizzi-uppy-primary) 12%, transparent)",
-                      boxShadow: "inset 0 1px 0 0 color-mix(in srgb, var(--bizzi-uppy-primary) 18%, transparent)",
-                    }}
-                  >
-                    <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--bizzi-upload-text-muted)]">
-                      Storage Drive
-                    </span>
-                    <p
-                      className="mt-1 truncate text-[0.9375rem] font-semibold leading-tight text-[var(--bizzi-upload-text)] sm:text-base"
-                      title={
-                        storageFolderId
-                          ? (storageFolderDisplayName?.trim() || "Folder")
-                          : (driveName ?? "Storage")
-                      }
-                    >
-                      {storageFolderId
-                        ? (storageFolderDisplayName?.trim() || "Selected folder")
-                        : (driveName || "Storage")}
-                    </p>
-                  </div>
-                ) : (
-                  driveName && (
-                    <span>
-                      Drive:{" "}
-                      <strong className="font-semibold text-[var(--bizzi-upload-text)]">{driveName}</strong>
-                    </span>
-                  )
-                )}
-                {workspaceName && (
-                  <span>
-                    Destination:{" "}
-                    <strong className="font-semibold text-[var(--bizzi-upload-text)]">{workspaceName}</strong>
-                  </span>
-                )}
-                {scopeLabel && (
-                  <span>
-                    Visibility:{" "}
-                    <strong className="font-semibold text-[var(--bizzi-upload-text)]">{scopeLabel}</strong>
-                  </span>
-                )}
+            <p className="bizzi-upload-panel-subtitle mt-0.5 line-clamp-2 text-[11px] leading-snug sm:text-xs">
+              Stored in {(targetDriveName || driveName || "RAW").trim()}
+            </p>
+          </>
+        ) : (
+          <>
+            <span className="bizzi-upload-panel-eyebrow block text-[9px] tracking-[0.16em]">Upload</span>
+            <p className="truncate text-[0.875rem] font-semibold tracking-tight text-[var(--bizzi-upload-text)] sm:text-[0.9375rem]">
+              {headerLabel}
+            </p>
+          </>
+        )}
+        <p className="bizzi-upload-panel-subtitle mt-0.5 text-[11px] sm:text-xs">
+          {hasFiles
+            ? `${formatBytes(bytesUploaded)} / ${formatBytes(bytesTotal)}${
+                fileCount > 0 ? ` · ${completedCount} of ${fileCount} files` : ""
+              }`
+            : "Use Add files below or drag and drop onto the page"}
+        </p>
+        {hasFiles && hasFailures && uploadingCount > 0 ? (
+          <p className="mt-1 text-[11px] font-medium text-amber-800 dark:text-amber-200/95 sm:text-xs">
+            Some files failed. Your other files are still uploading.
+          </p>
+        ) : null}
+        {(workspaceName ||
+          scopeLabel ||
+          driveName ||
+          (destinationMode === "storage" && !galleryId)) && (
+          <div className="bizzi-upload-panel-meta mt-2 flex w-full min-w-0 flex-col gap-2 text-[11px] sm:text-xs">
+            {destinationMode === "storage" && !galleryId ? (
+              <div
+                className="w-full min-w-0 rounded-xl border px-3 py-2.5 sm:px-3.5 sm:py-3"
+                style={{
+                  borderColor: "var(--bizzi-upload-border-subtle)",
+                  backgroundColor:
+                    "color-mix(in srgb, var(--bizzi-uppy-primary) 12%, transparent)",
+                  boxShadow:
+                    "inset 0 1px 0 0 color-mix(in srgb, var(--bizzi-uppy-primary) 18%, transparent)",
+                }}
+              >
+                <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--bizzi-upload-text-muted)]">
+                  Storage Drive
+                </span>
+                <p
+                  className="mt-1 truncate text-[0.9375rem] font-semibold leading-tight text-[var(--bizzi-upload-text)] sm:text-base"
+                  title={
+                    storageFolderId
+                      ? (storageFolderDisplayName?.trim() || "Folder")
+                      : (driveName ?? "Storage")
+                  }
+                >
+                  {storageFolderId
+                    ? (storageFolderDisplayName?.trim() || "Selected folder")
+                    : (driveName || "Storage")}
+                </p>
               </div>
+            ) : (
+              driveName && (
+                <span>
+                  Drive:{" "}
+                  <strong className="font-semibold text-[var(--bizzi-upload-text)]">{driveName}</strong>
+                </span>
+              )
+            )}
+            {workspaceName && (
+              <span>
+                Destination:{" "}
+                <strong className="font-semibold text-[var(--bizzi-upload-text)]">{workspaceName}</strong>
+              </span>
+            )}
+            {scopeLabel && (
+              <span>
+                Visibility:{" "}
+                <strong className="font-semibold text-[var(--bizzi-upload-text)]">{scopeLabel}</strong>
+              </span>
             )}
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          {expanded ? (
-            <ChevronDown className="bizzi-upload-panel-icon-btn h-4 w-4 opacity-70" aria-hidden />
-          ) : (
-            <ChevronUp className="bizzi-upload-panel-icon-btn h-4 w-4 opacity-70" aria-hidden />
-          )}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handlePanelClose();
-            }}
-            className="bizzi-upload-panel-icon-btn p-2"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </button>
+        )}
+      </div>
 
-      {/* Progress bar - show when there are files */}
       {hasFiles && (
         <div className="bizzi-upload-panel-progress-track h-1 w-full shrink-0">
           <div
@@ -1149,8 +1171,7 @@ export default function UppyUploadModal({
         </div>
       )}
 
-      {/* Expanded: Uppy Dashboard */}
-      {expanded && ready && uppyRef.current && (
+      {ready && uppyRef.current && (
         <div
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
           style={{ borderTop: "1px solid var(--bizzi-upload-divider)" }}

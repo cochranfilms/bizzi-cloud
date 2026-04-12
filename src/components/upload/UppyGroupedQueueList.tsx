@@ -225,9 +225,10 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
   const files = useUppyFileListThrottled(uppy, 220);
 
   const { bundleGroups, loose } = useMemo(() => {
+    const ordered = files.slice().reverse();
     const groups = new Map<string, { root: string; kind: string; members: typeof files }>();
     const looseList: typeof files = [];
-    for (const f of files) {
+    for (const f of ordered) {
       const m = f.meta as PkgMeta;
       const root = m.macosPackageGroupRoot?.trim();
       if (root) {

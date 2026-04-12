@@ -21,6 +21,7 @@ import {
 import StorageBadge from "./StorageBadge";
 import DashboardColorsModal from "./DashboardColorsModal";
 import SupportTicketModal from "./SupportTicketModal";
+import WorkspaceUploadDock from "./WorkspaceUploadDock";
 import { useEnterpriseOptional } from "@/context/EnterpriseContext";
 import { useBackup } from "@/context/BackupContext";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
@@ -297,6 +298,9 @@ export default function RightPanel({
                   }}
                 />
               </ul>
+              <div className="mt-3 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+                <WorkspaceUploadDock />
+              </div>
             </div>
             <div className="flex min-h-0 flex-shrink-0 flex-col overflow-hidden">
               <div className="flex min-h-0 flex-1 flex-col p-4">
@@ -389,6 +393,7 @@ export default function RightPanel({
                 <Share2 className="h-3.5 w-3.5 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
                 Shared with you
               </Link>
+              <WorkspaceUploadDock />
             </div>
           </div>
 

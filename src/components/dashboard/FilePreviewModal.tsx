@@ -44,6 +44,7 @@ import {
 import { creatorRawUsesProxyOnlyPlayback } from "@/lib/creator-raw-preview-contract";
 import { NEXT_PUBLIC_ASSET_PREVIEW_CONSOLIDATED_ENABLED } from "@/lib/public-delivery-flags";
 import { scheduleCloudFilesPostMutationRefresh } from "@/lib/cloud-files-post-mutation-refresh";
+import { dispatchVideoThumbnailBust } from "@/lib/video-thumb-client-bust";
 
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const PDF_EXT = /\.pdf$/i;
@@ -300,14 +301,21 @@ export default function FilePreviewModal({
     ? getPreviewType(file.name, file.contentType, file.assetType, file.mediaType ?? null)
     : "other";
 
+  const [videoLivePlaybackSec, setVideoLivePlaybackSec] = useState(0);
+
+  useEffect(() => {
+    setVideoLivePlaybackSec(0);
+  }, [file?.id]);
+
   const immersiveVideoCommentContext = useMemo(() => {
     if (previewType !== "video") return null;
     return {
       pauseAndGetTimestamp: () =>
         immersiveVideoCommentRef.current?.pauseAndGetCurrentTime() ?? null,
       badgeColorHex: immersiveCommentBadgeHex,
+      livePlaybackSec: videoLivePlaybackSec,
     };
-  }, [previewType, immersiveCommentBadgeHex]);
+  }, [previewType, immersiveCommentBadgeHex, videoLivePlaybackSec]);
 
   const hearts = useHearts(file?.id ?? null);
   const pdfEmbed = usePdfBlobUrl(fullUrl, previewType === "pdf");
@@ -350,6 +358,7 @@ export default function FilePreviewModal({
         body: fd,
       });
       if (!res.ok) return;
+      dispatchVideoThumbnailBust(f.objectKey);
       scheduleCloudFilesPostMutationRefresh();
       setVideoPosterToast(true);
     } catch {
@@ -1065,6 +1074,7 @@ export default function FilePreviewModal({
                     proxyOnlyPlayback={proxyOnlyPlayback}
                     onIntrinsicVideoSize={onIntrinsicVideoSize}
                     immersiveSettingsActions={immersiveVideoSettingsActions ?? undefined}
+                    onPlaybackTimeSec={setVideoLivePlaybackSec}
                   />
                 </div>
               ) : (
@@ -1086,6 +1096,7 @@ export default function FilePreviewModal({
                   proxyOnlyPlayback={proxyOnlyPlayback}
                   onIntrinsicVideoSize={onIntrinsicVideoSize}
                   immersiveSettingsActions={immersiveVideoSettingsActions ?? undefined}
+                  onPlaybackTimeSec={setVideoLivePlaybackSec}
                 />
               )}
             </div>

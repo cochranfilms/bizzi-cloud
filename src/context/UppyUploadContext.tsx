@@ -7,6 +7,7 @@ import {
   useCallback,
   useRef,
   useEffect,
+  type RefObject,
 } from "react";
 import UppyUploadModal from "@/components/upload/UppyUploadModal";
 import { useBackup } from "@/context/BackupContext";
@@ -69,6 +70,20 @@ export type UppyUploadPanelTarget = {
   storageFolderId: string | null;
 };
 
+export type UploadDockSummary = {
+  fileCount: number;
+  uploadingCount: number;
+  allComplete: boolean;
+  hasFailures: boolean;
+};
+
+const DEFAULT_UPLOAD_DOCK_SUMMARY: UploadDockSummary = {
+  fileCount: 0,
+  uploadingCount: 0,
+  allComplete: true,
+  hasFailures: false,
+};
+
 interface UppyUploadContextValue {
   openPanel: (
     driveId: string,
@@ -81,6 +96,14 @@ interface UppyUploadContextValue {
   isUploadPanelOpen: boolean;
   /** When the panel is open, the destination key so file views can suppress empty states during upload. */
   uploadPanelTarget: UppyUploadPanelTarget | null;
+  /** Anchor in the Workspace rail — upload panel positions to the left of this node. */
+  workspaceUploadAnchorRef: RefObject<HTMLDivElement | null>;
+  /** When the upload session is open, whether the detailed queue panel is visible (Workspace cloud toggles this). */
+  uploadQueueExpanded: boolean;
+  setUploadQueueExpanded: (expanded: boolean) => void;
+  toggleUploadQueueExpanded: () => void;
+  /** Lightweight progress for the Workspace upload cloud button. */
+  uploadDockSummary: UploadDockSummary;
 }
 
 const UppyUploadContext = createContext<UppyUploadContextValue | null>(null);
@@ -137,6 +160,11 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
   >(null);
   const [onGalleryManageUploadLifecycle, setOnGalleryManageUploadLifecycle] =
     useState<((event: GalleryManageUploadLifecycleEvent) => void) | null>(null);
+  const workspaceUploadAnchorRef = useRef<HTMLDivElement | null>(null);
+  const [uploadQueueExpanded, setUploadQueueExpanded] = useState(false);
+  const [uploadDockSummary, setUploadDockSummary] = useState<UploadDockSummary>(
+    DEFAULT_UPLOAD_DOCK_SUMMARY
+  );
 
   const panelRef = useRef<PanelTarget>({
     open: false,
@@ -221,6 +249,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
       const incoming = options?.initialFiles;
       if (same && incoming && incoming.length > 0) {
         setPendingFiles((prev) => [...prev, ...incoming]);
+        setUploadQueueExpanded(true);
         if (options?.storageFolderDisplayName !== undefined) {
           setStorageFolderDisplayName(options.storageFolderDisplayName ?? null);
         }
@@ -272,14 +301,21 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
       setPendingFiles(
         options?.initialFiles && options.initialFiles.length > 0 ? [...options.initialFiles] : []
       );
+      setUploadQueueExpanded(Boolean(options?.initialFiles && options.initialFiles.length > 0));
       setOpen(true);
     },
     []
   );
 
+  const toggleUploadQueueExpanded = useCallback(() => {
+    setUploadQueueExpanded((e) => !e);
+  }, []);
+
   const closePanel = useCallback(() => {
     panelRef.current = { ...panelRef.current, open: false };
     setOpen(false);
+    setUploadQueueExpanded(false);
+    setUploadDockSummary(DEFAULT_UPLOAD_DOCK_SUMMARY);
     setDriveId(null);
     setPathPrefix("");
     setStorageFolderId(null);
@@ -323,13 +359,27 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
 
   return (
     <UppyUploadContext.Provider
-      value={{ openPanel, closePanel, isUploadPanelOpen: open, uploadPanelTarget }}
+      value={{
+        openPanel,
+        closePanel,
+        isUploadPanelOpen: open,
+        uploadPanelTarget,
+        workspaceUploadAnchorRef,
+        uploadQueueExpanded,
+        setUploadQueueExpanded,
+        toggleUploadQueueExpanded,
+        uploadDockSummary,
+      }}
     >
       {children}
       {driveId && (
         <UppyUploadModal
           open={open}
           onClose={closePanel}
+          uploadQueueExpanded={uploadQueueExpanded}
+          onUploadQueueExpandedChange={setUploadQueueExpanded}
+          workspaceUploadAnchorRef={workspaceUploadAnchorRef}
+          onDockSummaryChange={setUploadDockSummary}
           driveId={driveId}
           pathPrefix={pathPrefix}
           storageFolderId={storageFolderId}

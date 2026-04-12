@@ -126,5 +126,10 @@ export async function POST(request: Request) {
     video_thumbnail_rev: FieldValue.increment(1),
   });
 
-  return NextResponse.json({ ok: true, videoThumbnailRev: true });
+  const after = await fileRef.get();
+  const revRaw = after.data()?.video_thumbnail_rev;
+  const videoThumbnailRev =
+    typeof revRaw === "number" && Number.isFinite(revRaw) ? revRaw : null;
+
+  return NextResponse.json({ ok: true, videoThumbnailRev });
 }

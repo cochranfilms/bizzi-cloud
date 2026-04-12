@@ -5,6 +5,7 @@ import { getAuthToken } from "@/lib/auth-token";
 import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
 import { withThumbnailSlot } from "@/lib/thumbnailQueue";
 import { shouldUseVideoThumbnailPipeline } from "@/lib/raw-video";
+import { VIDEO_THUMB_BUST_EVENT, type VideoThumbBustDetail } from "@/lib/video-thumb-client-bust";
 
 /**
  * Returns a blob URL for a video thumbnail.
@@ -19,6 +20,17 @@ export function useVideoThumbnail(
   const { enabled = true, isVideo: isVideoOverride = false, posterRev = 0 } = options;
   const [url, setUrl] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
+  const [clientBustGen, setClientBustGen] = useState(0);
+
+  useEffect(() => {
+    if (!objectKey) return;
+    const onBust = (e: Event) => {
+      const d = (e as CustomEvent<VideoThumbBustDetail>).detail;
+      if (d?.objectKey === objectKey) setClientBustGen((n) => n + 1);
+    };
+    window.addEventListener(VIDEO_THUMB_BUST_EVENT, onBust as EventListener);
+    return () => window.removeEventListener(VIDEO_THUMB_BUST_EVENT, onBust as EventListener);
+  }, [objectKey]);
 
   useEffect(() => {
     const isVideo =
@@ -130,6 +142,9 @@ export function useVideoThumbnail(
         if (posterRev > 0) {
           params.set("_rev", String(posterRev));
         }
+        if (clientBustGen > 0) {
+          params.set("_cb", String(clientBustGen));
+        }
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 25000);
         try {
@@ -182,7 +197,7 @@ export function useVideoThumbnail(
       cancelled = true;
       cleanup();
     };
-  }, [objectKey, fileName, enabled, isVideoOverride, posterRev]);
+  }, [objectKey, fileName, enabled, isVideoOverride, posterRev, clientBustGen]);
 
   return url;
 }

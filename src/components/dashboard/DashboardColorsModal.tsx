@@ -122,7 +122,7 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
 
   const content = (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[120] flex items-center justify-center p-4"
       onClick={(e) => e.target === e.currentTarget && onClose()}
       role="dialog"
       aria-modal="true"

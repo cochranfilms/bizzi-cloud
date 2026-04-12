@@ -7,6 +7,8 @@ export type ImmersiveVideoCommentContextValue = {
   pauseAndGetTimestamp: () => number | null;
   /** Hex color for the timecode badge (custom button / dashboard chrome primary). */
   badgeColorHex: string;
+  /** Current video playback position in seconds (updates while the video plays). */
+  livePlaybackSec: number;
 };
 
 const ImmersiveVideoCommentContext = createContext<ImmersiveVideoCommentContextValue | null>(

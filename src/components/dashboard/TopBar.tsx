@@ -411,10 +411,11 @@ export default function TopBar({
   const actionsRow = (
     <>
       {filesFilterTopChrome}
-      {showLayoutSettings && (
-        <LayoutSettingsBar showViewMode={true} className="w-full py-0 sm:w-auto" />
-      )}
-      <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="flex min-w-0 w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3 md:gap-4">
+        {showLayoutSettings ? (
+          <LayoutSettingsBar showViewMode={true} className="w-full py-0 sm:w-auto" />
+        ) : null}
+        <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
         {showCreateTransfer ? (
             <button
               type="button"
@@ -562,6 +563,7 @@ export default function TopBar({
             </div>
           </div>
         )}
+        </div>
       </div>
     </>
   );

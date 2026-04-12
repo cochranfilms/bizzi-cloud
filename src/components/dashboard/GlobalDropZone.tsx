@@ -16,8 +16,7 @@ import {
   getDropOverlayCopy,
   isCreatorMainRoute,
 } from "@/lib/upload-destination-resolve";
-import { creatorRawClientAllowsUploadAttempt } from "@/lib/creator-raw-upload-policy";
-import { CREATOR_RAW_REJECTION_MESSAGES } from "@/lib/creator-raw-media-config";
+import { openUploadPanelForCurrentRoute } from "@/lib/workspace-upload-panel-open";
 import { resolveImmersiveWorkspaceAccent } from "@/lib/immersive-workspace-accent";
 
 /**
@@ -156,106 +155,26 @@ export default function GlobalDropZone() {
       if (fileList.length === 0) return;
 
       try {
-        const isFilesView =
-          pathname === "/dashboard/files" ||
-          pathname === "/enterprise/files" ||
-          pathname === "/desktop/app/files" ||
-          (!!pathname?.startsWith("/team/") && pathname.includes("/files"));
-
-        const resolved = await resolveUploadDestination({
+        await openUploadPanelForCurrentRoute({
+          openPanel,
           pathname,
           searchParams,
           currentDriveId,
           currentDrivePath: currentDrivePath ?? "",
           linkedDrives,
-          sourceSurface: isFilesView
-            ? "files_global_drop"
-            : isCreatorMainRoute(pathname)
-              ? "creator_global_drop"
-              : "home_global_drop",
           isEnterpriseFilesNoDrive,
           isGalleryMediaDrive,
           getOrCreateStorageDrive: async () => {
             const d = await getOrCreateStorageDrive();
             return { id: d.id, name: d.name };
           },
-        });
-
-        if (!resolved.success) {
-          setFileUploadErrorMessage(resolved.userMessage);
-          return;
-        }
-
-        let files = fileList;
-        if (resolved.destinationMode === "creator_raw" && resolved.isLocked) {
-          const allowed = files.filter((f) => creatorRawClientAllowsUploadAttempt(f.name));
-          const skipped = files.length - allowed.length;
-          if (skipped > 0) {
-            setFileUploadErrorMessage(
-              `${skipped} file(s) skipped — ${CREATOR_RAW_REJECTION_MESSAGES.nonMediaLeaf}`
-            );
-          }
-          files = allowed;
-          if (files.length === 0) return;
-        }
-
-        let finalDriveId = resolved.driveId;
-        let workspaceId: string | null = null;
-        const panelOptionsBase = {
-          uploadIntent: resolved.uploadIntent,
-          lockedDestination: resolved.isLocked,
-          sourceSurface: resolved.sourceSurface,
-          destinationMode: resolved.destinationMode,
-          routeContext: resolved.routeContext,
-          targetDriveName: resolved.driveName,
-          resolvedBy: resolved.resolvedBy,
-          driveName: resolved.driveName,
-        };
-
-        if ((pathname?.startsWith("/enterprise") || pathname?.startsWith("/desktop")) && org?.id && user) {
-          try {
-            const token = await user.getIdToken();
-            if (!token) throw new Error("Not authenticated");
-            const params = new URLSearchParams({
-              drive_id: finalDriveId,
-              organization_id: org.id,
-            });
-            if (selectedWorkspaceId) params.set("workspace_id", selectedWorkspaceId);
-            const res = await fetch(`/api/workspaces/default-for-drive?${params}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            if (!res.ok) throw new Error("Could not resolve workspace");
-            const data = (await res.json()) as {
-              workspace_id: string;
-              drive_id: string;
-              drive_name?: string;
-              workspace_name?: string;
-              scope_label?: string;
-            };
-            workspaceId = data.workspace_id;
-            finalDriveId = data.drive_id ?? finalDriveId;
-            openPanel(finalDriveId, resolved.pathPrefix, workspaceId, {
-              ...panelOptionsBase,
-              initialFiles: files,
-              driveName: data.drive_name ?? panelOptionsBase.driveName,
-              workspaceName: data.workspace_name ?? null,
-              scopeLabel: data.scope_label ?? null,
-              storageFolderId: storageParentFolderId,
-              storageFolderDisplayName: storageUploadFolderLabel,
-            });
-            return;
-          } catch (err) {
-            console.error("Workspace resolve failed:", err);
-            setFileUploadErrorMessage("Could not resolve workspace for upload. Try again.");
-            return;
-          }
-        }
-
-        openPanel(finalDriveId, resolved.pathPrefix, workspaceId, {
-          ...panelOptionsBase,
-          initialFiles: files,
-          storageFolderId: storageParentFolderId,
-          storageFolderDisplayName: storageUploadFolderLabel,
+          orgId: org?.id,
+          user,
+          selectedWorkspaceId,
+          storageParentFolderId,
+          storageUploadFolderLabel,
+          setFileUploadErrorMessage,
+          initialFiles: fileList,
         });
       } catch (err) {
         console.error("Global drop upload failed:", err);

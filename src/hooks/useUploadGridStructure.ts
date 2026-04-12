@@ -9,10 +9,11 @@ import { getGridProgressThrottleMs } from "@/lib/uppy-mass-upload-constants";
 type PkgMeta = { macosPackageGroupRoot?: string };
 
 function looseIdsFromUppy<M extends Meta, B extends Body>(uppy: Uppy<M, B>): string[] {
-  return uppy
+  const ids = uppy
     .getFiles()
     .filter((f) => !(f.meta as PkgMeta)?.macosPackageGroupRoot?.trim())
     .map((f) => f.id);
+  return ids.slice().reverse();
 }
 
 /**

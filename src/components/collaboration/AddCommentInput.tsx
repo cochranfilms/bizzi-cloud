@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, type CSSProperties } from "react";
 import Image from "next/image";
 import { Send } from "lucide-react";
 import type { ImmersiveVideoCommentContextValue } from "@/context/ImmersiveVideoCommentContext";
@@ -31,7 +31,7 @@ interface AddCommentInputProps {
   /** For initials fallback when `composerPhotoURL` is empty */
   composerDisplayLabel?: string;
   /**
-   * When set (immersive video preview), focusing the composer pauses the player and shows a timecode badge.
+   * When set (immersive video preview), timecode follows playback; focus pauses and pins time for the draft.
    */
   immersiveVideoComment?: ImmersiveVideoCommentContextValue | null;
 }
@@ -82,10 +82,15 @@ export default function AddCommentInput({
     const trimmed = body.trim();
     if (!trimmed || submitting) return;
     setSubmitting(true);
-    const ts =
-      immersiveVideoComment && pinnedVideoSec != null && Number.isFinite(pinnedVideoSec)
-        ? pinnedVideoSec
-        : null;
+    let ts: number | null = null;
+    if (immersiveVideoComment) {
+      if (pinnedVideoSec != null && Number.isFinite(pinnedVideoSec)) {
+        ts = pinnedVideoSec;
+      } else {
+        const live = immersiveVideoComment.livePlaybackSec;
+        ts = Number.isFinite(live) ? Math.max(0, live) : null;
+      }
+    }
     const ok = await onSubmit(trimmed, ts);
     setSubmitting(false);
     if (ok) {
@@ -102,16 +107,16 @@ export default function AddCommentInput({
     }
   };
 
-  const shellClass = immersiveChrome
+  const shellRowClass = immersiveChrome
     ? immersiveIsDark
-      ? "flex min-h-[2.5rem] w-full min-w-0 items-start gap-2 rounded-xl border border-white/12 bg-neutral-900/55 px-2.5 py-2 focus-within:border-bizzi-cyan/50 focus-within:ring-2 focus-within:ring-bizzi-cyan/20"
-      : "flex min-h-[2.5rem] w-full min-w-0 items-start gap-2 rounded-xl border border-neutral-200/95 bg-white px-2.5 py-2 focus-within:border-bizzi-blue/45 focus-within:ring-2 focus-within:ring-bizzi-blue/15"
+      ? "flex min-h-[2.75rem] w-full min-w-0 items-center gap-2.5 rounded-full border border-white/14 bg-white/[0.06] px-3 py-2 shadow-inner shadow-black/20 focus-within:border-white/28 focus-within:ring-2 focus-within:ring-bizzi-cyan/25"
+      : "flex min-h-[2.75rem] w-full min-w-0 items-center gap-2.5 rounded-full border border-neutral-200/95 bg-white px-3 py-2 shadow-sm focus-within:border-bizzi-blue/50 focus-within:ring-2 focus-within:ring-bizzi-blue/12"
     : "";
 
   const textareaInShellClass = immersiveChrome
     ? immersiveIsDark
-      ? "min-h-[2.5rem] min-w-0 flex-1 resize-none border-0 bg-transparent px-0.5 py-0 text-sm leading-snug text-white placeholder:text-neutral-500 focus:outline-none focus:ring-0 disabled:opacity-50"
-      : "min-h-[2.5rem] min-w-0 flex-1 resize-none border-0 bg-transparent px-0.5 py-0 text-sm leading-snug text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-0 disabled:opacity-50"
+      ? "min-h-[1.25rem] min-w-0 flex-1 resize-none border-0 bg-transparent py-0.5 text-[15px] leading-snug text-white placeholder:text-neutral-500 focus:outline-none focus:ring-0 disabled:opacity-50"
+      : "min-h-[1.25rem] min-w-0 flex-1 resize-none border-0 bg-transparent py-0.5 text-[15px] leading-snug text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-0 disabled:opacity-50"
     : "";
 
   const inputClass = immersiveChrome
@@ -123,6 +128,13 @@ export default function AddCommentInput({
   const photo = composerPhotoURL?.trim() || null;
   const showComposerAvatar = immersiveChrome && !!composerDisplayLabel.trim();
   const useVideoCommentShell = !!(immersiveChrome && immersiveVideoComment);
+  const shadeStyleBlock = useVideoCommentShell && showComposerAvatar;
+
+  const displayName = composerDisplayLabel.trim();
+  const displaySec =
+    pinnedVideoSec != null && Number.isFinite(pinnedVideoSec)
+      ? pinnedVideoSec
+      : (immersiveVideoComment?.livePlaybackSec ?? 0);
 
   const captureVideoTimestamp = () => {
     if (!immersiveVideoComment) return;
@@ -130,11 +142,123 @@ export default function AddCommentInput({
     if (sec != null) setPinnedVideoSec(sec);
   };
 
+  const accentHex = immersiveVideoComment?.badgeColorHex ?? "";
+
   const sendBtnClass = immersiveChrome
     ? immersiveIsDark
-      ? "rounded-xl bg-bizzi-cyan hover:bg-bizzi-cyan/90"
-      : "rounded-xl bg-bizzi-blue hover:bg-bizzi-blue/90"
+      ? "rounded-2xl shadow-sm"
+      : "rounded-2xl shadow-sm"
     : "rounded-lg bg-bizzi-blue hover:bg-bizzi-blue/90 dark:rounded-lg dark:bg-bizzi-cyan dark:hover:bg-bizzi-cyan/90";
+
+  const sendBtnStyle =
+    useVideoCommentShell && accentHex ? ({ backgroundColor: accentHex } as CSSProperties) : undefined;
+
+  const avatar = showComposerAvatar ? (
+    <div
+      className={`relative h-10 w-10 shrink-0 overflow-hidden rounded-full ${
+        photo
+          ? ""
+          : immersiveIsDark
+            ? "flex items-center justify-center bg-white/12 text-xs font-semibold text-white"
+            : "flex items-center justify-center bg-neutral-200 text-xs font-semibold text-neutral-800"
+      }`}
+      aria-hidden
+    >
+      {photo ? (
+        <Image
+          src={photo}
+          alt=""
+          width={40}
+          height={40}
+          className="h-10 w-10 object-cover"
+          unoptimized
+        />
+      ) : (
+        composerInitials(composerDisplayLabel)
+      )}
+    </div>
+  ) : null;
+
+  const badge = useVideoCommentShell ? (
+    <span
+      className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold tabular-nums leading-none tracking-tight text-white"
+      style={{ backgroundColor: accentHex || "#64748b" }}
+    >
+      {formatImmersiveVideoTimecode(displaySec)}
+    </span>
+  ) : null;
+
+  const textArea = (
+    <textarea
+      ref={textareaRef}
+      value={body}
+      onChange={(e) => {
+        setBody(e.target.value.slice(0, 2000));
+        requestAnimationFrame(syncHeight);
+      }}
+      onKeyDown={handleKeyDown}
+      onFocus={captureVideoTimestamp}
+      onBlur={() => setPinnedVideoSec(null)}
+      placeholder={placeholder}
+      rows={1}
+      disabled={submitting}
+      className={useVideoCommentShell ? textareaInShellClass : inputClass}
+      style={{ maxHeight: MAX_HEIGHT_PX }}
+    />
+  );
+
+  const sendButton = (
+    <button
+      type="button"
+      onMouseDown={(e) => {
+        if (e.button === 0) e.preventDefault();
+      }}
+      onClick={handleSubmit}
+      disabled={!body.trim() || submitting}
+      style={sendBtnStyle}
+      className={`flex h-10 w-10 shrink-0 items-center justify-center text-white transition-opacity disabled:opacity-50 ${
+        useVideoCommentShell && accentHex ? "hover:brightness-110" : ""
+      } ${sendBtnClass}`}
+      aria-label="Send comment"
+    >
+      <Send className="h-4 w-4" />
+    </button>
+  );
+
+  if (shadeStyleBlock) {
+    return (
+      <div className="flex gap-3">
+        {avatar}
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div
+            className={
+              immersiveIsDark
+                ? "truncate text-sm font-semibold text-white/95"
+                : "truncate text-sm font-semibold text-neutral-900"
+            }
+          >
+            {displayName}
+          </div>
+          <div className="flex items-end gap-2">
+            <div className={`${shellRowClass} flex-1`}>
+              {badge}
+              {textArea}
+            </div>
+            <div className="flex shrink-0 flex-col gap-1 pb-px">{sendButton}</div>
+          </div>
+          {showCancel && onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="self-start text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-end gap-2">
@@ -164,57 +288,15 @@ export default function AddCommentInput({
         </div>
       ) : null}
       {useVideoCommentShell ? (
-        <div className={shellClass}>
-          {pinnedVideoSec != null ? (
-            <span
-              className="mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white"
-              style={{ backgroundColor: immersiveVideoComment!.badgeColorHex }}
-            >
-              {formatImmersiveVideoTimecode(pinnedVideoSec)}
-            </span>
-          ) : null}
-          <textarea
-            ref={textareaRef}
-            value={body}
-            onChange={(e) => {
-              setBody(e.target.value.slice(0, 2000));
-              requestAnimationFrame(syncHeight);
-            }}
-            onKeyDown={handleKeyDown}
-            onFocus={captureVideoTimestamp}
-            placeholder={placeholder}
-            rows={1}
-            disabled={submitting}
-            className={textareaInShellClass}
-            style={{ maxHeight: MAX_HEIGHT_PX }}
-          />
+        <div className={`${shellRowClass} flex-1`}>
+          {badge}
+          {textArea}
         </div>
       ) : (
-        <textarea
-          ref={textareaRef}
-          value={body}
-          onChange={(e) => {
-            setBody(e.target.value.slice(0, 2000));
-            requestAnimationFrame(syncHeight);
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          rows={1}
-          disabled={submitting}
-          className={inputClass}
-          style={{ maxHeight: MAX_HEIGHT_PX }}
-        />
+        textArea
       )}
       <div className="flex shrink-0 flex-col gap-1 pb-0.5">
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={!body.trim() || submitting}
-          className={`flex h-9 w-9 items-center justify-center text-white transition-opacity disabled:opacity-50 ${sendBtnClass}`}
-          aria-label="Send comment"
-        >
-          <Send className="h-4 w-4" />
-        </button>
+        {sendButton}
         {showCancel && onCancel && (
           <button
             type="button"

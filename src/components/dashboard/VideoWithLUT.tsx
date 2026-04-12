@@ -154,6 +154,8 @@ interface VideoWithLUTProps {
   lutTelemetryPasswordProtected?: boolean;
   /** Immersive preview: gear menu entries (e.g. set poster frame). */
   immersiveSettingsActions?: ImmersiveVideoSettingItem[] | null;
+  /** Fired on timeupdate with playback position (immersive comments live clock). */
+  onPlaybackTimeSec?: (sec: number) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -192,9 +194,13 @@ const VideoWithLUT = forwardRef<VideoWithLUTHandle, VideoWithLUTProps>(function 
     lutTelemetryGalleryId,
     lutTelemetryPasswordProtected,
     immersiveSettingsActions = null,
+    onPlaybackTimeSec,
   },
   ref,
 ) {
+  const onPlaybackTimeSecRef = useRef(onPlaybackTimeSec);
+  onPlaybackTimeSecRef.current = onPlaybackTimeSec;
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -970,9 +976,16 @@ const VideoWithLUT = forwardRef<VideoWithLUTHandle, VideoWithLUTProps>(function 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    const emitPlayback = (t: number) => {
+      onPlaybackTimeSecRef.current?.(Number.isFinite(t) ? Math.max(0, t) : 0);
+    };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
-    const onTimeUpdate = () => setCurrentTime(video.currentTime);
+    const onTimeUpdate = () => {
+      const t = video.currentTime;
+      setCurrentTime(t);
+      emitPlayback(t);
+    };
     const onDurationChange = () => setDuration(video.duration);
     const onVolumeChange = () => {
       setVolume(video.volume);
@@ -983,7 +996,9 @@ const VideoWithLUT = forwardRef<VideoWithLUTHandle, VideoWithLUTProps>(function 
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("durationchange", onDurationChange);
     video.addEventListener("volumechange", onVolumeChange);
-    setCurrentTime(video.currentTime);
+    const t0 = video.currentTime;
+    setCurrentTime(t0);
+    emitPlayback(t0);
     setDuration(video.duration);
     setVolume(video.volume);
     setIsMuted(video.muted);
@@ -994,7 +1009,7 @@ const VideoWithLUT = forwardRef<VideoWithLUTHandle, VideoWithLUTProps>(function 
       video.removeEventListener("durationchange", onDurationChange);
       video.removeEventListener("volumechange", onVolumeChange);
     };
-  }, []);
+  }, [videoSrc]);
 
   const togglePlayPause = () => {
     const video = videoRef.current;
