@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import BizziLogoMark from "@/components/BizziLogoMark";
+import WorkspaceLogoMark from "@/components/dashboard/WorkspaceLogoMark";
 import { useAuth } from "@/context/AuthContext";
 import { notifyTeamWorkspaceUpdated } from "@/context/PersonalTeamWorkspaceContext";
 import { Sparkles, ImageIcon, Loader2, Users } from "lucide-react";
@@ -208,7 +208,7 @@ export default function PersonalTeamIdentityForm({
                   // eslint-disable-next-line @next/next/no-img-element -- blob URL
                   <img src={logoPreview} alt="" className="h-full w-full object-cover" />
                 ) : (
-                  <BizziLogoMark width={64} height={64} className="opacity-90" alt="Bizzi" />
+                  <WorkspaceLogoMark width={64} height={64} className="opacity-90" alt="Bizzi" />
                 )}
               </div>
               <div className="flex w-full flex-1 flex-col gap-2">

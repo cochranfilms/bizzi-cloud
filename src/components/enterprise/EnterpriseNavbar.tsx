@@ -19,7 +19,7 @@ import {
 import UserMenu from "@/components/dashboard/UserMenu";
 import WorkspaceSwitcher from "@/components/dashboard/WorkspaceSwitcher";
 import NotificationBell from "@/components/collaboration/NotificationBell";
-import BizziLogoMark from "@/components/BizziLogoMark";
+import WorkspaceLogoMark from "@/components/dashboard/WorkspaceLogoMark";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 
@@ -126,7 +126,7 @@ export default function EnterpriseNavbar() {
 
   return (
     <header
-      className="sticky top-0 z-50 flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2"
+      className="sticky top-0 z-50 flex flex-col gap-1.5 border-b border-neutral-200 bg-[var(--dashboard-bg)] px-4 py-2 shadow-sm dark:border-neutral-800 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2"
       data-org-theme={theme}
     >
       <div className={headerTopRowFlexCls}>
@@ -157,7 +157,7 @@ export default function EnterpriseNavbar() {
                 unoptimized
               />
             ) : (
-              <BizziLogoMark width={24} height={24} className="flex-shrink-0" />
+              <WorkspaceLogoMark width={24} height={24} className="flex-shrink-0" />
             )}
           </Link>
         </div>
@@ -196,7 +196,7 @@ export default function EnterpriseNavbar() {
         />
       )}
       <nav
-        className={`fixed left-0 right-0 top-16 z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
+        className={`fixed left-0 right-0 top-16 z-50 transform border-b border-neutral-200 bg-[var(--dashboard-bg)] transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 ${
           mobileOpen
             ? "translate-y-0 pointer-events-auto"
             : "-translate-y-full pointer-events-none opacity-0"

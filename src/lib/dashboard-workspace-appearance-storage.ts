@@ -11,6 +11,10 @@ export type WorkspaceAppearanceStored = {
   uiTheme?: EnterpriseThemeId | null;
   /** Custom chrome color (#rrggbb): main nav + quick access outlines; null = inherit preset */
   buttonColor?: string | null;
+  /** Workspace header logo: main “B” shape (#rrggbb); omit for default white */
+  logoIconColor?: string | null;
+  /** Workspace header logo: lightning bolt (#rrggbb); omit for default cyan */
+  logoLightningColor?: string | null;
 };
 
 function safeSessionEnterpriseOrgId(): string | null {

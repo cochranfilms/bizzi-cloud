@@ -2527,9 +2527,11 @@ export default function FileGrid({
     <div
       ref={gridSectionRef}
       className={`w-full flex flex-1 min-h-0 flex-col space-y-0${dragState?.isActive ? " select-none" : ""}${
-        embeddedHomeStorage || filesPageStorageEmbeddedChrome || threeTabFilesLanding
-          ? " h-full min-h-0 pl-4 pr-4 sm:pl-6 sm:pr-6 md:pr-7"
-          : ""
+        embeddedHomeStorage
+          ? " min-w-0"
+          : filesPageStorageEmbeddedChrome || threeTabFilesLanding
+            ? " h-full min-h-0 pl-4 pr-4 sm:pl-6 sm:pr-6 md:pr-7"
+            : ""
       }`}
       data-selectable-grid
       data-embedded-home-storage={embeddedHomeStorage ? "true" : undefined}
@@ -2581,10 +2583,14 @@ export default function FileGrid({
           insideFolder={!!currentDrive}
         />
 
-      {/* Scrollable content — distinct layout per view: FolderView vs AllFilesView */}
+      {/* Scroll: embedded home uses <main> (page scroll). Other surfaces keep an inner scroll region. */}
       <div
-        className="min-h-0 flex-1 overflow-auto space-y-0"
-        data-scroll-container
+        className={
+          embeddedHomeStorage
+            ? "w-full space-y-0"
+            : "min-h-0 flex-1 overflow-auto space-y-0"
+        }
+        data-scroll-container={embeddedHomeStorage ? undefined : true}
         data-view-type={currentDrive ? "folder" : "all-files"}
         onContextMenu={handleWorkspaceBackgroundContextMenu}
       >
@@ -2955,7 +2961,7 @@ export default function FileGrid({
         <div
           className={
             filesLandingStorageFrame
-              ? "mt-1 flex h-[min(70vh,52rem)] min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-950/30"
+              ? "mt-1 flex h-[min(70vh,52rem)] min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-[var(--dashboard-bg)] shadow-sm dark:border-neutral-700"
               : "contents"
           }
         >

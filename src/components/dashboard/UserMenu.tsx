@@ -4,8 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronDown, Settings, LogOut, Sun, Moon, Building2, Shield, Palette, Headphones } from "lucide-react";
-import { useTheme } from "@/context/ThemeContext";
+import { ChevronDown, Settings, LogOut, Building2, Shield, Palette, Headphones } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { completeSignOutWithConfirmation } from "@/lib/auth-sign-out-client";
@@ -32,7 +31,6 @@ export default function UserMenu({ compact = false, basePath }: UserMenuProps) {
     (pathname?.startsWith("/desktop/app") ?? false) ||
     (pathname?.startsWith("/enterprise") ?? false) ||
     /^\/team\/[^/]+/.test(pathname ?? "");
-  const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const { org } = useEnterprise();
 
@@ -157,18 +155,6 @@ export default function UserMenu({ compact = false, basePath }: UserMenuProps) {
             Settings
           </button>
           <div className="border-t border-neutral-100 dark:border-neutral-700">
-            <button
-              type="button"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
-            >
-              {theme === "dark" ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
-              {theme === "dark" ? "Light theme" : "Dark theme"}
-            </button>
             {!customizeAndSupportInQuickAccess ? (
               <>
                 <button

@@ -19,7 +19,7 @@ import {
 import UserMenu from "./UserMenu";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import NotificationBell from "@/components/collaboration/NotificationBell";
-import BizziLogoMark from "@/components/BizziLogoMark";
+import WorkspaceLogoMark from "@/components/dashboard/WorkspaceLogoMark";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 import { useAuth } from "@/context/AuthContext";
@@ -198,7 +198,7 @@ export default function TopNavbar() {
   if (teamNavBase && teamWs) {
     const homeHref = teamNavBase;
     return (
-      <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
+      <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-[var(--dashboard-bg)] px-4 py-2 shadow-sm dark:border-neutral-800 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
         <div className={headerTopRowFlexCls}>
           <div className="flex min-w-0 shrink-0 items-center gap-2">
             <button
@@ -226,7 +226,7 @@ export default function TopNavbar() {
                   unoptimized
                 />
               ) : (
-                <BizziLogoMark width={24} height={24} className="flex-shrink-0" />
+                <WorkspaceLogoMark width={24} height={24} className="flex-shrink-0" />
               )}
               <span className="hidden max-w-[10rem] truncate text-sm font-semibold text-neutral-900 md:inline dark:text-white">
                 {teamWs.teamName}
@@ -249,7 +249,7 @@ export default function TopNavbar() {
           />
         )}
         <nav
-          className={`fixed left-0 right-0 top-16 z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
+          className={`fixed left-0 right-0 top-16 z-50 transform border-b border-neutral-200 bg-[var(--dashboard-bg)] transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 ${
             mobileOpen
               ? "translate-y-0 pointer-events-auto"
               : "-translate-y-full pointer-events-none opacity-0"
@@ -315,7 +315,7 @@ export default function TopNavbar() {
   }
 
   return (
-    <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
+    <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-[var(--dashboard-bg)] px-4 py-2 shadow-sm dark:border-neutral-800 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
       <div className={headerTopRowFlexCls}>
         <div className="flex min-w-0 shrink-0 items-center gap-2">
           <button
@@ -333,7 +333,7 @@ export default function TopNavbar() {
             onClick={() => setMobileOpen(false)}
             aria-label="Bizzi Cloud home"
           >
-            <BizziLogoMark width={24} height={24} />
+            <WorkspaceLogoMark width={24} height={24} />
             <span className="hidden text-sm font-semibold tracking-tight text-neutral-900 md:inline dark:text-white">
               Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
             </span>
@@ -357,7 +357,7 @@ export default function TopNavbar() {
         />
       )}
       <nav
-        className={`fixed left-0 right-0 top-16 z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
+        className={`fixed left-0 right-0 top-16 z-50 transform border-b border-neutral-200 bg-[var(--dashboard-bg)] transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 ${
           mobileOpen
             ? "translate-y-0 pointer-events-auto"
             : "-translate-y-full pointer-events-none opacity-0"

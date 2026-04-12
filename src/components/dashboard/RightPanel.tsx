@@ -236,7 +236,7 @@ export default function RightPanel({
   if (isEnterprisePanel) {
     return (
       <>
-        <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800 dark:bg-neutral-950">
+        <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-[var(--dashboard-bg)] shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <div className="min-h-0 flex-1 overflow-y-auto border-b border-neutral-200 p-4 dark:border-neutral-800">
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
@@ -313,7 +313,7 @@ export default function RightPanel({
 
   return (
     <>
-      <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800 dark:bg-neutral-950">
+      <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-[var(--dashboard-bg)] shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div className="min-h-0 flex-1 overflow-y-auto border-b border-neutral-200 dark:border-neutral-800">
             <div className="p-4">

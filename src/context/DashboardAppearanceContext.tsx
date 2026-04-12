@@ -9,9 +9,13 @@ import {
   useCallback,
 } from "react";
 import { usePathname } from "next/navigation";
-import { useTheme } from "@/context/ThemeContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
-import { getDashboardBackground } from "@/lib/dashboard-appearance-themes";
+import {
+  DEFAULT_DASHBOARD_PAGE_BACKGROUND,
+  getDashboardBackground,
+} from "@/lib/dashboard-appearance-themes";
+import { shouldUseDarkUiTokensForPageBackground } from "@/lib/color-luminance";
+import { isDashboardWorkspacePath } from "@/lib/dashboard-workspace-routes";
 import type { EnterpriseThemeId } from "@/types/enterprise";
 import {
   deleteWorkspaceAppearance,
@@ -23,6 +27,8 @@ import {
 } from "@/lib/dashboard-workspace-appearance-storage";
 
 const DEFAULT_ACCENT = "#00BFFF";
+const DEFAULT_LOGO_ICON = "#ffffff";
+const DEFAULT_LOGO_LIGHTNING = "#00BFFF";
 
 interface DashboardAppearanceContextType {
   accentColor: string;
@@ -35,6 +41,12 @@ interface DashboardAppearanceContextType {
   /** Custom #rrggbb for main nav + quick access chrome; null = inherit org/team preset colors. */
   buttonColor: string | null;
   setButtonColor: (hex: string | null) => void;
+  /** Logo “B” / icon shape; null = default white */
+  logoIconColor: string | null;
+  setLogoIconColor: (hex: string | null) => void;
+  /** Logo lightning bolt; null = default cyan */
+  logoLightningColor: string | null;
+  setLogoLightningColor: (hex: string | null) => void;
   workspaceKey: string;
   cssVariables: React.CSSProperties;
   resetToDefault: () => void;
@@ -53,7 +65,6 @@ function lightenHex(hex: string, amount: number): string {
 }
 
 export function DashboardAppearanceProvider({ children }: { children: React.ReactNode }) {
-  const { theme } = useTheme();
   const pathname = usePathname();
   const { org } = useEnterprise();
   const enterpriseOrgId = org?.id ?? null;
@@ -68,6 +79,8 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
   const [uiThemeOverride, setUiThemeOverrideState] =
     useState<EnterpriseThemeId | null>(null);
   const [buttonColor, setButtonColorState] = useState<string | null>(null);
+  const [logoIconColor, setLogoIconColorState] = useState<string | null>(null);
+  const [logoLightningColor, setLogoLightningColorState] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -82,6 +95,8 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
       setBackgroundThemeIdState(null);
       setUiThemeOverrideState(null);
       setButtonColorState(null);
+      setLogoIconColorState(null);
+      setLogoLightningColorState(null);
       return;
     }
     const slot = readAllWorkspaceAppearance()[workspaceKey] ?? {};
@@ -97,6 +112,16 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
     setButtonColorState(
       slot.buttonColor && /^#[0-9A-Fa-f]{6}$/.test(slot.buttonColor)
         ? slot.buttonColor
+        : null,
+    );
+    setLogoIconColorState(
+      slot.logoIconColor && /^#[0-9A-Fa-f]{6}$/.test(slot.logoIconColor)
+        ? slot.logoIconColor
+        : null,
+    );
+    setLogoLightningColorState(
+      slot.logoLightningColor && /^#[0-9A-Fa-f]{6}$/.test(slot.logoLightningColor)
+        ? slot.logoLightningColor
         : null,
     );
   }, [workspaceKey, hydrated]);
@@ -148,18 +173,52 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
     [workspaceKey],
   );
 
+  const setLogoIconColor = useCallback(
+    (hex: string | null) => {
+      setLogoIconColorState(hex);
+      if (workspaceKey === "enterprise:pending") return;
+      if (typeof window === "undefined") return;
+      if (hex === null) {
+        writeWorkspaceAppearance(workspaceKey, { logoIconColor: null });
+        return;
+      }
+      if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return;
+      writeWorkspaceAppearance(workspaceKey, { logoIconColor: hex });
+    },
+    [workspaceKey],
+  );
+
+  const setLogoLightningColor = useCallback(
+    (hex: string | null) => {
+      setLogoLightningColorState(hex);
+      if (workspaceKey === "enterprise:pending") return;
+      if (typeof window === "undefined") return;
+      if (hex === null) {
+        writeWorkspaceAppearance(workspaceKey, { logoLightningColor: null });
+        return;
+      }
+      if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return;
+      writeWorkspaceAppearance(workspaceKey, { logoLightningColor: hex });
+    },
+    [workspaceKey],
+  );
+
   const resetToDefault = useCallback(() => {
     setAccentColorState(DEFAULT_ACCENT);
     setBackgroundThemeIdState(null);
     setUiThemeOverrideState(null);
     setButtonColorState(null);
+    setLogoIconColorState(null);
+    setLogoLightningColorState(null);
     if (typeof window === "undefined" || workspaceKey === "enterprise:pending") return;
     deleteWorkspaceAppearance(workspaceKey);
     removeLegacyGlobalAppearanceKeys();
   }, [workspaceKey]);
 
-  const isDark = theme === "dark";
-  const dashboardBg = getDashboardBackground(backgroundThemeId, isDark);
+  const dashboardPageBackground =
+    workspaceKey === "enterprise:pending"
+      ? DEFAULT_DASHBOARD_PAGE_BACKGROUND
+      : (getDashboardBackground(backgroundThemeId) ?? DEFAULT_DASHBOARD_PAGE_BACKGROUND);
   const accentHover = useMemo(() => lightenHex(accentColor, 20), [accentColor]);
 
   const sectionTitleBg = useMemo(() => {
@@ -171,18 +230,35 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
     return `rgba(${r}, ${g}, ${b}, 0.2)`;
   }, [accentColor]);
 
+  const resolvedLogoIcon = logoIconColor ?? DEFAULT_LOGO_ICON;
+  const resolvedLogoLightning = logoLightningColor ?? DEFAULT_LOGO_LIGHTNING;
+
   const cssVariables: React.CSSProperties = useMemo(() => {
     const vars: Record<string, string> = {
       "--bizzi-accent": accentColor,
       "--bizzi-accent-hover": accentHover,
       "--bizzi-section-title-bg": sectionTitleBg,
+      "--dashboard-bg": dashboardPageBackground,
+      "--dashboard-logo-icon": resolvedLogoIcon,
+      "--dashboard-logo-lightning": resolvedLogoLightning,
+      backgroundColor: dashboardPageBackground,
     };
-    if (dashboardBg) {
-      vars["--dashboard-bg"] = dashboardBg;
-      vars["backgroundColor"] = dashboardBg;
-    }
     return vars as React.CSSProperties;
-  }, [accentColor, accentHover, dashboardBg, sectionTitleBg]);
+  }, [
+    accentColor,
+    accentHover,
+    dashboardPageBackground,
+    resolvedLogoIcon,
+    resolvedLogoLightning,
+    sectionTitleBg,
+  ]);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || !hydrated) return;
+    if (!isDashboardWorkspacePath(pathname)) return;
+    const dark = shouldUseDarkUiTokensForPageBackground(dashboardPageBackground);
+    document.documentElement.classList.toggle("dark", dark);
+  }, [hydrated, pathname, dashboardPageBackground]);
 
   const contextValue: DashboardAppearanceContextType = useMemo(
     () => ({
@@ -194,6 +270,10 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
       setUiThemeId,
       buttonColor,
       setButtonColor,
+      logoIconColor,
+      setLogoIconColor,
+      logoLightningColor,
+      setLogoLightningColor,
       workspaceKey,
       cssVariables,
       resetToDefault,
@@ -204,11 +284,15 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
       cssVariables,
       uiThemeOverride,
       buttonColor,
+      logoIconColor,
+      logoLightningColor,
       workspaceKey,
       setAccentColor,
       setBackgroundThemeId,
       setUiThemeId,
       setButtonColor,
+      setLogoIconColor,
+      setLogoLightningColor,
       resetToDefault,
     ],
   );

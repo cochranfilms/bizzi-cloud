@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import BizziLogoMark from "@/components/BizziLogoMark";
+import WorkspaceLogoMark from "@/components/dashboard/WorkspaceLogoMark";
 import { usePathname } from "next/navigation";
 import {
   Home,
@@ -47,11 +47,11 @@ export default function Sidebar() {
   });
 
   return (
-    <aside className="flex h-full w-56 flex-col border-r border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+    <aside className="flex h-full w-56 flex-col border-r border-neutral-200 bg-[var(--dashboard-bg)] dark:border-neutral-800">
       {/* Logo + search */}
       <div className="flex flex-col gap-3 border-b border-neutral-200 p-4 dark:border-neutral-800">
         <Link href="/" className="flex items-center gap-2">
-          <BizziLogoMark width={28} height={28} />
+          <WorkspaceLogoMark width={28} height={28} />
           <span className="font-semibold text-lg tracking-tight text-neutral-900 dark:text-white">
             Bizzi <span className="text-bizzi-blue">Cloud</span>
           </span>

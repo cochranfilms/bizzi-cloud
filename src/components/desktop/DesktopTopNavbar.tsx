@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import BizziLogoMark from "@/components/BizziLogoMark";
+import WorkspaceLogoMark from "@/components/dashboard/WorkspaceLogoMark";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
@@ -125,7 +125,7 @@ export default function DesktopTopNavbar({
     "flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0 md:gap-3";
 
   return (
-    <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
+    <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-[var(--dashboard-bg)] px-4 py-2 shadow-sm dark:border-neutral-800 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
       <div className={headerTopRowFlexCls}>
         <div className="flex min-w-0 shrink-0 items-center gap-2 md:gap-3">
           <button
@@ -158,7 +158,7 @@ export default function DesktopTopNavbar({
             onClick={() => setMobileOpen(false)}
             aria-label="Bizzi Cloud home"
           >
-            <BizziLogoMark width={24} height={24} />
+            <WorkspaceLogoMark width={24} height={24} />
           </Link>
         </div>
 
@@ -187,7 +187,7 @@ export default function DesktopTopNavbar({
         />
       )}
       <nav
-        className={`fixed left-0 right-0 top-16 z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
+        className={`fixed left-0 right-0 top-16 z-50 transform border-b border-neutral-200 bg-[var(--dashboard-bg)] transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 ${
           mobileOpen
             ? "translate-y-0 pointer-events-auto"
             : "-translate-y-full pointer-events-none opacity-0"

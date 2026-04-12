@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, RotateCcw } from "lucide-react";
-import { useTheme } from "@/context/ThemeContext";
 import { useDashboardAppearance } from "@/context/DashboardAppearanceContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
-import { getDashboardBackground } from "@/lib/dashboard-appearance-themes";
+import {
+  DEFAULT_DASHBOARD_PAGE_BACKGROUND,
+  getDashboardBackground,
+} from "@/lib/dashboard-appearance-themes";
 import { getThemeById } from "@/lib/enterprise-themes";
 
 const HEX_REGEX = /^#[0-9A-Fa-f]{6}$/;
@@ -61,7 +63,6 @@ function ColorPickerRow({
 }
 
 export default function DashboardColorsModal({ open, onClose }: DashboardColorsModalProps) {
-  const { theme } = useTheme();
   const {
     accentColor,
     setAccentColor,
@@ -71,6 +72,10 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
     setUiThemeId,
     buttonColor,
     setButtonColor,
+    logoIconColor,
+    setLogoIconColor,
+    logoLightningColor,
+    setLogoLightningColor,
     resetToDefault,
     workspaceKey,
   } = useDashboardAppearance();
@@ -79,22 +84,37 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
   const [accentInput, setAccentInput] = useState(accentColor);
   const [buttonsInput, setButtonsInput] = useState("");
   const [backgroundInput, setBackgroundInput] = useState("");
+  const [iconInput, setIconInput] = useState("#ffffff");
+  const [lightningInput, setLightningInput] = useState("#00BFFF");
 
   const inheritedUiTheme = teamWs?.teamThemeId ?? org?.theme ?? "bizzi";
   const presetButtonHex = getThemeById(inheritedUiTheme).primary;
   const resolvedButtonsHex = getThemeById(uiThemeOverride ?? inheritedUiTheme).primary;
-  const isDark = theme === "dark";
-  const fallbackPageBg = isDark ? "#0a0a0a" : "#f5f5f5";
+  const fallbackPageBg = DEFAULT_DASHBOARD_PAGE_BACKGROUND;
   const resolvedBackgroundHex =
-    getDashboardBackground(backgroundThemeId, isDark) ?? fallbackPageBg;
+    getDashboardBackground(backgroundThemeId) ?? fallbackPageBg;
+  const defaultIconHex = "#ffffff";
+  const defaultLightningHex = "#00BFFF";
+  const resolvedIconHex = logoIconColor ?? defaultIconHex;
+  const resolvedLightningHex = logoLightningColor ?? defaultLightningHex;
 
   useEffect(() => {
     if (open) {
       setAccentInput(accentColor);
       setButtonsInput(buttonColor ?? resolvedButtonsHex);
       setBackgroundInput(resolvedBackgroundHex);
+      setIconInput(resolvedIconHex);
+      setLightningInput(resolvedLightningHex);
     }
-  }, [open, accentColor, buttonColor, resolvedBackgroundHex, resolvedButtonsHex]);
+  }, [
+    open,
+    accentColor,
+    buttonColor,
+    resolvedBackgroundHex,
+    resolvedButtonsHex,
+    resolvedIconHex,
+    resolvedLightningHex,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -192,7 +212,8 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
               Background
             </label>
             <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
-              Workspace page background for the current light or dark mode.
+              Workspace page background for the main content area, nav, and shell. Contrast for text
+              and controls updates automatically from this color.
             </p>
             <ColorPickerRow
               disabled={appearanceLocked}
@@ -214,6 +235,65 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
                 Clear workspace background
               </button>
             )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Icon
+            </label>
+            <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
+              Main logo shape in the workspace header (the “B” mark). Pick a color that stays readable
+              on your workspace background.
+            </p>
+            <ColorPickerRow
+              disabled={appearanceLocked}
+              value={iconInput}
+              onInputChange={setIconInput}
+              onHexCommit={(v) => setLogoIconColor(v)}
+              placeholder={defaultIconHex}
+            />
+            {logoIconColor !== null && (
+              <button
+                type="button"
+                disabled={appearanceLocked}
+                className="mt-2 text-xs font-medium text-neutral-600 underline-offset-2 hover:underline disabled:opacity-50 dark:text-neutral-400"
+                onClick={() => {
+                  setLogoIconColor(null);
+                  setIconInput(defaultIconHex);
+                }}
+              >
+                Use default icon color
+              </button>
+            )}
+
+            <div className="mt-4 pl-0 sm:pl-1">
+              <label className="mb-1 block text-sm font-medium text-neutral-600 dark:text-neutral-400">
+                Lightning
+              </label>
+              <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
+                The bolt segment layered with the icon—defaults to the classic Bizzi cyan.
+              </p>
+              <ColorPickerRow
+                disabled={appearanceLocked}
+                value={lightningInput}
+                onInputChange={setLightningInput}
+                onHexCommit={(v) => setLogoLightningColor(v)}
+                placeholder={defaultLightningHex}
+              />
+              {logoLightningColor !== null && (
+                <button
+                  type="button"
+                  disabled={appearanceLocked}
+                  className="mt-2 text-xs font-medium text-neutral-600 underline-offset-2 hover:underline disabled:opacity-50 dark:text-neutral-400"
+                  onClick={() => {
+                    setLogoLightningColor(null);
+                    setLightningInput(defaultLightningHex);
+                  }}
+                >
+                  Use default lightning color
+                </button>
+              )}
+            </div>
           </div>
 
           <div>
@@ -240,6 +320,8 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
                 setAccentInput("#00BFFF");
                 setButtonsInput(presetButtonHex);
                 setBackgroundInput(fallbackPageBg);
+                setIconInput(defaultIconHex);
+                setLightningInput(defaultLightningHex);
               }}
               className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-800 disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
             >

@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { isDashboardWorkspacePath } from "@/lib/dashboard-workspace-routes";
 
 type Theme = "light" | "dark";
 
@@ -38,6 +39,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!mounted) return;
+    // Dashboard / enterprise / team / desktop: `html.dark` is driven by workspace background luminance.
+    if (isDashboardWorkspacePath(pathname)) return;
     applyRootDarkClass(theme, pathname);
   }, [mounted, pathname, theme]);
 

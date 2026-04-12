@@ -1902,10 +1902,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         <section
           ref={homeInlineStorageSectionRef}
           id="home-inline-storage-viewer"
-          className="scroll-mt-24 pt-1 sm:scroll-mt-28"
+          className="scroll-mt-24 w-full min-w-0 pt-0 sm:scroll-mt-28"
         >
+          {/* Full-width workspace surface: height grows with content; page scroll is <main>, not this box. */}
           <div
-            className={`flex h-[min(72vh,56rem)] min-h-[24rem] flex-col overflow-hidden ${
+            className={`w-full min-w-0 flex flex-col ${
               homeInlineStoragePeek ? "home-inline-storage-open-peek" : ""
             }`.trim()}
           >

@@ -601,7 +601,7 @@ export default function TopBar({
 
   return (
     <div
-      className={`relative z-10 flex flex-shrink-0 flex-col bg-white dark:bg-neutral-950 dark:shadow-neutral-900/30 ${
+      className={`relative z-10 flex flex-shrink-0 flex-col bg-[var(--dashboard-bg)] dark:shadow-neutral-900/30 ${
         centerContent
           ? "border-b border-neutral-200/70 dark:border-neutral-800/70"
           : "border-b border-neutral-200 dark:border-neutral-800"

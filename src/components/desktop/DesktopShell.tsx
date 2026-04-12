@@ -44,7 +44,7 @@ export default function DesktopShell({
     <GlobalDropZone />
     <RightPanelContext.Provider value={{ rightPanelOpen, setRightPanelOpen }}>
       <div
-        className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950"
+        className="flex h-screen flex-col overflow-hidden"
         style={{ ...themeVars, ...cssVariables }}
       >
         <DesktopTopNavbar
@@ -75,7 +75,7 @@ export default function DesktopShell({
           {/* NLE Mount panel: only for Bizzi Editor / Full Frame; inline on md+, slide-over on narrow */}
           {hasEditor && mountPanelOpen && (
             <aside
-              className="fixed left-0 top-14 bottom-0 z-50 w-72 flex-shrink-0 flex-col border-r border-neutral-200/60 bg-white shadow-xl transition-transform duration-200 md:relative md:top-0 md:z-auto md:shadow-none md:dark:bg-transparent dark:border-neutral-800/60 dark:bg-neutral-950 translate-x-0 md:flex"
+              className="fixed left-0 top-14 bottom-0 z-50 w-72 flex-shrink-0 flex-col border-r border-neutral-200/60 bg-[var(--dashboard-bg)] shadow-xl transition-transform duration-200 md:relative md:top-0 md:z-auto md:shadow-none md:dark:bg-transparent dark:border-neutral-800/60 translate-x-0 md:flex"
               aria-label="NLE Mount"
             >
               <div className="overflow-y-auto p-5">

@@ -1,10 +1,10 @@
-/** Dashboard background theme – theme-aware (light/dark mode) */
+/** Preset workspace page backgrounds (single surface color; legacy `darkBackground` kept for reference). */
 export interface DashboardBackgroundTheme {
   id: string;
   name: string;
-  /** Background color in light mode */
+  /** Default surface color for this preset */
   lightBackground: string;
-  /** Background color in dark mode */
+  /** @deprecated Previously used when `html.dark`; presets now expose one canonical `lightBackground`. */
   darkBackground: string;
 }
 
@@ -21,13 +21,16 @@ export const DASHBOARD_BACKGROUND_THEMES: DashboardBackgroundTheme[] = [
   { id: "black", name: "Black", lightBackground: "#525252", darkBackground: "#0a0a0a" },
 ];
 
-export function getDashboardBackground(
-  themeIdOrHex: string | null | undefined,
-  isDark: boolean
-): string | null {
+/** Default page surface when no custom background is saved (neutral-100). */
+export const DEFAULT_DASHBOARD_PAGE_BACKGROUND = "#f5f5f5";
+
+/**
+ * Resolves stored workspace background: raw `#rrggbb` or a preset id. Presets map to one canonical color.
+ */
+export function getDashboardBackground(themeIdOrHex: string | null | undefined): string | null {
   if (!themeIdOrHex) return null;
   if (/^#[0-9A-Fa-f]{6}$/.test(themeIdOrHex)) return themeIdOrHex;
   const theme = DASHBOARD_BACKGROUND_THEMES.find((t) => t.id === themeIdOrHex);
   if (!theme) return null;
-  return isDark ? theme.darkBackground : theme.lightBackground;
+  return theme.lightBackground;
 }
