@@ -120,6 +120,7 @@ export default function FileListRow({
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
     enabled: !isMacosPackage && !!file.objectKey && isVideo,
     isVideo,
+    posterRev: file.videoThumbnailRev ?? 0,
   });
   const fetchVideoStreamUrl = useBackupVideoStreamUrl();
   const isImage = isImageThumbnailTarget(file.name, file.objectKey, file.contentType);

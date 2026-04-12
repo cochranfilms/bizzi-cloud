@@ -269,6 +269,10 @@ export function storageListRowToRecentFile(
     video_codec: (raw.video_codec as string) ?? null,
     width: raw.width != null ? Number(raw.width) : null,
     height: raw.height != null ? Number(raw.height) : null,
+    videoThumbnailRev:
+      raw.videoThumbnailRev != null && Number.isFinite(Number(raw.videoThumbnailRev))
+        ? Number(raw.videoThumbnailRev)
+        : 0,
   };
 }
 
@@ -552,6 +556,8 @@ export interface RecentFile {
   /** Folder model v2 parent `storage_folders` id (null = drive root) */
   folder_id?: string | null;
   file_name?: string | null;
+  /** Bumps when user sets custom video poster; refreshes grid thumbnail fetch. */
+  videoThumbnailRev?: number;
 }
 
 /** Map /api/files/filter JSON row to RecentFile (enterprise path avoids client Firestore aggregation 403). */
@@ -608,6 +614,10 @@ export function apiFileToRecentFile(
     creativeApp: (raw.creativeApp as string) ?? null,
     creativeDisplayLabel: (raw.creativeDisplayLabel as string) ?? null,
     projectFileType: (raw.projectFileType as string) ?? null,
+    videoThumbnailRev:
+      raw.videoThumbnailRev != null && Number.isFinite(Number(raw.videoThumbnailRev))
+        ? Number(raw.videoThumbnailRev)
+        : 0,
   };
 }
 
@@ -1446,6 +1456,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 video_codec: (data.video_codec as string) ?? null,
                 width: data.width != null ? Number(data.width) : null,
                 height: data.height != null ? Number(data.height) : null,
+                videoThumbnailRev:
+                  data.video_thumbnail_rev != null && Number.isFinite(Number(data.video_thumbnail_rev))
+                    ? Number(data.video_thumbnail_rev)
+                    : 0,
               };
             });
           onFiles(files);
@@ -1530,6 +1544,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             video_codec: (data.video_codec as string) ?? null,
             width: data.width != null ? Number(data.width) : null,
             height: data.height != null ? Number(data.height) : null,
+            videoThumbnailRev:
+              data.video_thumbnail_rev != null && Number.isFinite(Number(data.video_thumbnail_rev))
+                ? Number(data.video_thumbnail_rev)
+                : 0,
           });
         });
       }
@@ -1622,6 +1640,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           assetType: data.asset_type ?? null,
           deletedAt: deletedAt ?? undefined,
           galleryId: data.gallery_id ?? null,
+          videoThumbnailRev:
+            data.video_thumbnail_rev != null && Number.isFinite(Number(data.video_thumbnail_rev))
+              ? Number(data.video_thumbnail_rev)
+              : 0,
         };
         });
     },
@@ -1897,6 +1919,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             assetType: data.asset_type ?? null,
             deletedAt: deletedAt ?? undefined,
             galleryId: data.gallery_id ?? null,
+            videoThumbnailRev:
+              data.video_thumbnail_rev != null && Number.isFinite(Number(data.video_thumbnail_rev))
+                ? Number(data.video_thumbnail_rev)
+                : 0,
           };
         });
       files.sort((a, b) =>

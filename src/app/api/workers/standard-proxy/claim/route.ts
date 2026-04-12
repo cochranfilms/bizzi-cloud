@@ -172,6 +172,7 @@ export async function POST(request: Request) {
       videoPosterUploadUrl: result.videoPosterUploadUrl,
       videoPosterUploadUrlExpiresInSec: result.videoPosterUploadUrlExpiresInSec,
       videoPosterUploadHeaders: result.videoPosterUploadHeaders,
+      videoPosterSeekSec: result.videoPosterSeekSec,
       lease_expires_at: result.lease_expires_at,
       max_attempt_deadline_at: result.max_attempt_deadline_at,
       heartbeat_interval_ms: result.heartbeat_interval_ms,

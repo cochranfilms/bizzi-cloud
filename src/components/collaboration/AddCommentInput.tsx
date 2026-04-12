@@ -3,12 +3,21 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { Send } from "lucide-react";
+import type { ImmersiveVideoCommentContextValue } from "@/context/ImmersiveVideoCommentContext";
 
 const MAX_HEIGHT_PX = 128;
 const MIN_HEIGHT_PX = 40;
 
+function formatImmersiveVideoTimecode(seconds: number): string {
+  const safe = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  const s = safe % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 interface AddCommentInputProps {
-  onSubmit: (body: string) => Promise<boolean>;
+  onSubmit: (body: string, videoTimestampSec?: number | null) => Promise<boolean>;
   placeholder?: string;
   onCancel?: () => void;
   showCancel?: boolean;
@@ -21,6 +30,10 @@ interface AddCommentInputProps {
   composerPhotoURL?: string | null;
   /** For initials fallback when `composerPhotoURL` is empty */
   composerDisplayLabel?: string;
+  /**
+   * When set (immersive video preview), focusing the composer pauses the player and shows a timecode badge.
+   */
+  immersiveVideoComment?: ImmersiveVideoCommentContextValue | null;
 }
 
 function composerInitials(label: string): string {
@@ -40,9 +53,11 @@ export default function AddCommentInput({
   immersiveIsDark = false,
   composerPhotoURL,
   composerDisplayLabel = "",
+  immersiveVideoComment = null,
 }: AddCommentInputProps) {
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [pinnedVideoSec, setPinnedVideoSec] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const syncHeight = useCallback(() => {
@@ -67,10 +82,15 @@ export default function AddCommentInput({
     const trimmed = body.trim();
     if (!trimmed || submitting) return;
     setSubmitting(true);
-    const ok = await onSubmit(trimmed);
+    const ts =
+      immersiveVideoComment && pinnedVideoSec != null && Number.isFinite(pinnedVideoSec)
+        ? pinnedVideoSec
+        : null;
+    const ok = await onSubmit(trimmed, ts);
     setSubmitting(false);
     if (ok) {
       setBody("");
+      setPinnedVideoSec(null);
       requestAnimationFrame(syncHeight);
     }
   };
@@ -82,6 +102,18 @@ export default function AddCommentInput({
     }
   };
 
+  const shellClass = immersiveChrome
+    ? immersiveIsDark
+      ? "flex min-h-[2.5rem] w-full min-w-0 items-start gap-2 rounded-xl border border-white/12 bg-neutral-900/55 px-2.5 py-2 focus-within:border-bizzi-cyan/50 focus-within:ring-2 focus-within:ring-bizzi-cyan/20"
+      : "flex min-h-[2.5rem] w-full min-w-0 items-start gap-2 rounded-xl border border-neutral-200/95 bg-white px-2.5 py-2 focus-within:border-bizzi-blue/45 focus-within:ring-2 focus-within:ring-bizzi-blue/15"
+    : "";
+
+  const textareaInShellClass = immersiveChrome
+    ? immersiveIsDark
+      ? "min-h-[2.5rem] min-w-0 flex-1 resize-none border-0 bg-transparent px-0.5 py-0 text-sm leading-snug text-white placeholder:text-neutral-500 focus:outline-none focus:ring-0 disabled:opacity-50"
+      : "min-h-[2.5rem] min-w-0 flex-1 resize-none border-0 bg-transparent px-0.5 py-0 text-sm leading-snug text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-0 disabled:opacity-50"
+    : "";
+
   const inputClass = immersiveChrome
     ? immersiveIsDark
       ? "min-h-[2.5rem] w-full resize-none rounded-xl border border-white/12 bg-neutral-900/55 px-3 py-2 text-sm leading-snug text-white placeholder:text-neutral-500 focus:border-bizzi-cyan/50 focus:outline-none focus:ring-2 focus:ring-bizzi-cyan/20 disabled:opacity-50"
@@ -90,6 +122,13 @@ export default function AddCommentInput({
 
   const photo = composerPhotoURL?.trim() || null;
   const showComposerAvatar = immersiveChrome && !!composerDisplayLabel.trim();
+  const useVideoCommentShell = !!(immersiveChrome && immersiveVideoComment);
+
+  const captureVideoTimestamp = () => {
+    if (!immersiveVideoComment) return;
+    const sec = immersiveVideoComment.pauseAndGetTimestamp();
+    if (sec != null) setPinnedVideoSec(sec);
+  };
 
   const sendBtnClass = immersiveChrome
     ? immersiveIsDark
@@ -124,20 +163,48 @@ export default function AddCommentInput({
           )}
         </div>
       ) : null}
-      <textarea
-        ref={textareaRef}
-        value={body}
-        onChange={(e) => {
-          setBody(e.target.value.slice(0, 2000));
-          requestAnimationFrame(syncHeight);
-        }}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        rows={1}
-        disabled={submitting}
-        className={inputClass}
-        style={{ maxHeight: MAX_HEIGHT_PX }}
-      />
+      {useVideoCommentShell ? (
+        <div className={shellClass}>
+          {pinnedVideoSec != null ? (
+            <span
+              className="mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white"
+              style={{ backgroundColor: immersiveVideoComment!.badgeColorHex }}
+            >
+              {formatImmersiveVideoTimecode(pinnedVideoSec)}
+            </span>
+          ) : null}
+          <textarea
+            ref={textareaRef}
+            value={body}
+            onChange={(e) => {
+              setBody(e.target.value.slice(0, 2000));
+              requestAnimationFrame(syncHeight);
+            }}
+            onKeyDown={handleKeyDown}
+            onFocus={captureVideoTimestamp}
+            placeholder={placeholder}
+            rows={1}
+            disabled={submitting}
+            className={textareaInShellClass}
+            style={{ maxHeight: MAX_HEIGHT_PX }}
+          />
+        </div>
+      ) : (
+        <textarea
+          ref={textareaRef}
+          value={body}
+          onChange={(e) => {
+            setBody(e.target.value.slice(0, 2000));
+            requestAnimationFrame(syncHeight);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          rows={1}
+          disabled={submitting}
+          className={inputClass}
+          style={{ maxHeight: MAX_HEIGHT_PX }}
+        />
+      )}
       <div className="flex shrink-0 flex-col gap-1 pb-0.5">
         <button
           type="button"

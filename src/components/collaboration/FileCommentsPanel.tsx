@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useComments } from "@/hooks/useComments";
 import { useAuth } from "@/context/AuthContext";
 import { useThemeResolved } from "@/context/ThemeContext";
+import { useImmersiveVideoCommentOptional } from "@/context/ImmersiveVideoCommentContext";
 import AddCommentInput from "./AddCommentInput";
 import CommentItem from "./CommentItem";
 import type { Comment } from "@/types/collaboration";
@@ -23,6 +24,7 @@ function CommentReplyList({
   onDelete,
   immersiveChrome,
   immersiveIsDark,
+  videoTimestampBadgeHex,
 }: {
   comments: Comment[];
   parentId: string;
@@ -31,6 +33,7 @@ function CommentReplyList({
   onDelete: (id: string) => Promise<boolean>;
   immersiveChrome?: boolean;
   immersiveIsDark?: boolean;
+  videoTimestampBadgeHex?: string | null;
 }) {
   const replies = comments.filter((c) => c.parentCommentId === parentId);
   if (replies.length === 0) return null;
@@ -53,6 +56,7 @@ function CommentReplyList({
           onDelete={onDelete}
           immersiveChrome={immersiveChrome}
           immersiveIsDark={immersiveIsDark}
+          videoTimestampBadgeHex={videoTimestampBadgeHex}
         />
       ))}
     </div>
@@ -67,6 +71,7 @@ export default function FileCommentsPanel({
   const { user } = useAuth();
   const theme = useThemeResolved();
   const immersiveIsDark = immersiveChrome && theme === "dark";
+  const immersiveVideoComment = useImmersiveVideoCommentOptional();
 
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const {
@@ -81,10 +86,12 @@ export default function FileCommentsPanel({
   const topLevel = comments.filter((c) => !c.parentCommentId);
   const currentUserId = user?.uid ?? "";
 
-  const handleAdd = async (body: string) => {
-    const result = await addComment(body, null);
+  const handleAdd = async (body: string, videoTimestampSec?: number | null) => {
+    const result = await addComment(body, null, videoTimestampSec ?? undefined);
     return !!result;
   };
+
+  const commentVideoBadgeHex = immersiveVideoComment?.badgeColorHex ?? null;
 
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
@@ -131,6 +138,7 @@ export default function FileCommentsPanel({
           composerDisplayLabel={
             user.displayName?.trim() || user.email?.split("@")[0] || user.uid.slice(0, 8)
           }
+          immersiveVideoComment={immersiveChrome ? immersiveVideoComment : null}
         />
       ) : (
         <p
@@ -205,6 +213,7 @@ export default function FileCommentsPanel({
                   onDelete={deleteComment}
                   immersiveChrome={immersiveChrome}
                   immersiveIsDark={immersiveChrome ? immersiveIsDark : undefined}
+                  videoTimestampBadgeHex={commentVideoBadgeHex}
                 />
                 <CommentReplyList
                   comments={comments}
@@ -214,6 +223,7 @@ export default function FileCommentsPanel({
                   onDelete={deleteComment}
                   immersiveChrome={immersiveChrome}
                   immersiveIsDark={immersiveChrome ? immersiveIsDark : undefined}
+                  videoTimestampBadgeHex={commentVideoBadgeHex}
                 />
               </li>
             ))}

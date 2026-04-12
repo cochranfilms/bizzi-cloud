@@ -26,6 +26,10 @@ function mapCommentFromApi(raw: Record<string, unknown>, fileId: string): Commen
     workspace_id: (raw.workspace_id ?? null) as string | null,
     visibility_scope: (raw.visibility_scope ?? null) as Comment["visibility_scope"],
     body: (raw.body as string) ?? "",
+    videoTimestampSec:
+      typeof raw.videoTimestampSec === "number" && Number.isFinite(raw.videoTimestampSec)
+        ? raw.videoTimestampSec
+        : null,
     isEdited: !!(raw.isEdited ?? false),
     isDeleted: !!(raw.isDeleted ?? false),
     createdAt: (raw.createdAt as string) ?? "",
@@ -86,21 +90,25 @@ export function useComments(fileId: string | null, options: UseCommentsOptions =
   }, [fileId, fetchComments, isVisible]);
 
   const addComment = useCallback(
-    async (body: string, parentCommentId?: string | null) => {
+    async (body: string, parentCommentId?: string | null, videoTimestampSec?: number | null) => {
       if (!fileId || !user) return null;
       const token = await getAuthToken(true);
       if (!token) return null;
       try {
+        const payload: Record<string, unknown> = {
+          body: body.trim(),
+          parentCommentId: parentCommentId ?? null,
+        };
+        if (videoTimestampSec != null && Number.isFinite(videoTimestampSec)) {
+          payload.videoTimestampSec = videoTimestampSec;
+        }
         const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/comments`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            body: body.trim(),
-            parentCommentId: parentCommentId ?? null,
-          }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));

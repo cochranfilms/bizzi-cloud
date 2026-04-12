@@ -51,9 +51,18 @@ function runPosterOnce(ffmpegBin, proxyMp4Path, posterJpegPath, seekSeconds) {
  * @param {string} proxyMp4Path
  * @param {string} posterJpegPath
  */
-export async function extractVideoPosterToFile(ffmpegBin, proxyMp4Path, posterJpegPath) {
+export async function extractVideoPosterToFile(
+  ffmpegBin,
+  proxyMp4Path,
+  posterJpegPath,
+  seekSeconds = 0.5
+) {
+  const seek =
+    typeof seekSeconds === "number" && Number.isFinite(seekSeconds) && seekSeconds >= 0
+      ? seekSeconds
+      : 0.5;
   try {
-    await runPosterOnce(ffmpegBin, proxyMp4Path, posterJpegPath, 0.5);
+    await runPosterOnce(ffmpegBin, proxyMp4Path, posterJpegPath, seek);
   } catch {
     await runPosterOnce(ffmpegBin, proxyMp4Path, posterJpegPath, 0);
   }
@@ -68,6 +77,7 @@ export async function extractVideoPosterToFile(ffmpegBin, proxyMp4Path, posterJp
  * @param {string | undefined} posterUploadUrl
  * @param {Record<string, string> | undefined} posterHeaders
  * @param {{ job_id?: string }} logCtx
+ * @param {number} [posterSeekSec]
  */
 export async function tryUploadVideoPosterAfterProxy(
   putFile,
@@ -75,12 +85,17 @@ export async function tryUploadVideoPosterAfterProxy(
   proxyMp4Path,
   posterUploadUrl,
   posterHeaders,
-  logCtx
+  logCtx,
+  posterSeekSec
 ) {
   if (!posterUploadUrl?.trim() || !ffmpegBin) return;
   const posterPath = `${proxyMp4Path}.poster.jpg`;
+  const seek =
+    typeof posterSeekSec === "number" && Number.isFinite(posterSeekSec) && posterSeekSec >= 0
+      ? posterSeekSec
+      : 0.5;
   try {
-    await extractVideoPosterToFile(ffmpegBin, proxyMp4Path, posterPath);
+    await extractVideoPosterToFile(ffmpegBin, proxyMp4Path, posterPath, seek);
     const sz = (await stat(posterPath)).size;
     await putFile(posterUploadUrl, posterPath, posterHeaders || {});
     console.log(

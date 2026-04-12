@@ -495,6 +495,10 @@ function toFileResponse(
     creativeApp: (d.creative_app as string | undefined) ?? null,
     creativeDisplayLabel: (d.creative_display_label as string | undefined) ?? null,
     projectFileType: (d.project_file_type as string | undefined) ?? null,
+    videoThumbnailRev:
+      typeof d.video_thumbnail_rev === "number" && Number.isFinite(d.video_thumbnail_rev)
+        ? d.video_thumbnail_rev
+        : 0,
   };
   if (options?.includeAdminFields) {
     base.owner_user_id = d.owner_user_id ?? d.userId ?? null;

@@ -114,6 +114,8 @@ export interface Comment {
   workspace_id?: string | null;
   visibility_scope?: FileCommentVisibilityScope | null;
   body: string;
+  /** Seconds into the file’s video when the comment was composed (immersive video preview). */
+  videoTimestampSec?: number | null;
   isEdited: boolean;
   isDeleted: boolean;
   createdAt: string;

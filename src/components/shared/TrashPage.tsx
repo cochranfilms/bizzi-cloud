@@ -206,6 +206,7 @@ function DeletedFileCard({
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
     enabled: !isMacosPackage && !!file.objectKey && isVideo && isInView,
     isVideo,
+    posterRev: file.videoThumbnailRev ?? 0,
   });
   const fetchVideoStreamUrl = useBackupVideoStreamUrl();
   const isPdf = isPdfFile(file.name) || file.contentType === "application/pdf";

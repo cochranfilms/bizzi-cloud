@@ -103,6 +103,11 @@ export interface FileMetadataFields {
   /** Dashboard/grid image thumbnail materialization (optional backfill). */
   image_thumb_status?: "none" | "pending" | "ready" | "failed" | null;
   image_thumb_object_key?: string | null;
+
+  /** User-chosen grid poster time (seconds); proxy workers use for JPEG extract. */
+  video_thumbnail_seek_sec?: number | null;
+  /** Incremented when poster is replaced — busts client thumbnail cache. */
+  video_thumbnail_rev?: number | null;
 }
 
 export type ProxyStatus =

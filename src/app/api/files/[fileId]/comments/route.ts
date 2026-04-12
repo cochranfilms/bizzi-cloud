@@ -42,6 +42,10 @@ function mapCommentDoc(d: QueryDocumentSnapshot) {
     workspace_id: (data.workspace_id ?? null) as string | null,
     visibility_scope: (data.visibility_scope ?? null) as string | null,
     body: data.body ?? "",
+    videoTimestampSec:
+      typeof data.video_timestamp_sec === "number" && Number.isFinite(data.video_timestamp_sec)
+        ? Math.max(0, data.video_timestamp_sec)
+        : null,
     isEdited: !!data.isEdited,
     isDeleted: !!data.isDeleted,
     createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? null,
@@ -163,10 +167,18 @@ export async function POST(
   const anchorId = ctx.anchorBackupFileId;
 
   const body = await request.json().catch(() => ({}));
-  const { body: commentBody, parentCommentId } = body;
+  const { body: commentBody, parentCommentId, videoTimestampSec: rawVideoTs } = body;
   const trimmed = typeof commentBody === "string" ? commentBody.trim() : "";
   if (!trimmed || trimmed.length > 2000) {
     return NextResponse.json({ error: "body required (max 2000 chars)" }, { status: 400 });
+  }
+
+  let videoTimestampSec: number | null = null;
+  if (rawVideoTs !== undefined && rawVideoTs !== null) {
+    const n = typeof rawVideoTs === "number" ? rawVideoTs : Number(rawVideoTs);
+    if (Number.isFinite(n) && n >= 0 && n <= 864_000) {
+      videoTimestampSec = Math.round(n * 1000) / 1000;
+    }
   }
 
   const db = getAdminFirestore();
@@ -211,6 +223,7 @@ export async function POST(
     file_owner_id: scope.file_owner_id,
     visibility_scope: scope.visibility_scope,
     body: trimmed.slice(0, 2000),
+    video_timestamp_sec: videoTimestampSec,
     isEdited: false,
     isDeleted: false,
     createdAt: now,
@@ -258,6 +271,7 @@ export async function POST(
     workspace_id: scope.workspace_id,
     visibility_scope: scope.visibility_scope,
     body: doc.body,
+    videoTimestampSec,
     isEdited: false,
     isDeleted: false,
     createdAt: now.toISOString(),

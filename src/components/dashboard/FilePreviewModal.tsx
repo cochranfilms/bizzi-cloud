@@ -10,9 +10,12 @@ import { getAuthToken } from "@/lib/auth-token";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
-import VideoWithLUT, { type LUTOption } from "@/components/dashboard/VideoWithLUT";
+import VideoWithLUT, { type LUTOption, type VideoWithLUTHandle } from "@/components/dashboard/VideoWithLUT";
 import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
+import { ImmersiveVideoCommentProvider } from "@/context/ImmersiveVideoCommentContext";
+import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 import { useDashboardAppearanceOptional } from "@/context/DashboardAppearanceContext";
+import { resolveDashboardChromeThemeVariables } from "@/lib/dashboard-chrome-theme";
 import { useThemeResolved } from "@/context/ThemeContext";
 import { isProjectFile } from "@/lib/bizzi-file-types";
 import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
@@ -40,6 +43,7 @@ import {
 } from "@/lib/creator-raw-reel-presentation";
 import { creatorRawUsesProxyOnlyPlayback } from "@/lib/creator-raw-preview-contract";
 import { NEXT_PUBLIC_ASSET_PREVIEW_CONSOLIDATED_ENABLED } from "@/lib/public-delivery-flags";
+import { scheduleCloudFilesPostMutationRefresh } from "@/lib/cloud-files-post-mutation-refresh";
 
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const PDF_EXT = /\.pdf$/i;
@@ -266,6 +270,15 @@ export default function FilePreviewModal({
   const immersiveLightChrome = theme === "light";
   const dashboardAppearance = useDashboardAppearanceOptional();
   const dashboardThemeAccent = dashboardAppearance?.accentColor ?? "#00BFFF";
+  const teamWs = usePersonalTeamWorkspace();
+  const inheritedUiTheme = teamWs ? teamWs.teamThemeId : "bizzi";
+  const immersiveCommentBadgeHex =
+    resolveDashboardChromeThemeVariables(
+      inheritedUiTheme,
+      dashboardAppearance?.buttonColor ?? null,
+      dashboardAppearance?.uiThemeOverride ?? null,
+    )["--enterprise-primary"] ?? "#00BFFF";
+  const immersiveVideoCommentRef = useRef<VideoWithLUTHandle>(null);
   const [fullUrl, setFullUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const [videoProcessing, setVideoProcessing] = useState(false);
@@ -286,8 +299,74 @@ export default function FilePreviewModal({
   const previewType = file
     ? getPreviewType(file.name, file.contentType, file.assetType, file.mediaType ?? null)
     : "other";
+
+  const immersiveVideoCommentContext = useMemo(() => {
+    if (previewType !== "video") return null;
+    return {
+      pauseAndGetTimestamp: () =>
+        immersiveVideoCommentRef.current?.pauseAndGetCurrentTime() ?? null,
+      badgeColorHex: immersiveCommentBadgeHex,
+    };
+  }, [previewType, immersiveCommentBadgeHex]);
+
   const hearts = useHearts(file?.id ?? null);
   const pdfEmbed = usePdfBlobUrl(fullUrl, previewType === "pdf");
+
+  const [videoPosterToast, setVideoPosterToast] = useState(false);
+
+  useEffect(() => {
+    if (!videoPosterToast) return;
+    const t = window.setTimeout(() => setVideoPosterToast(false), 2200);
+    return () => window.clearTimeout(t);
+  }, [videoPosterToast]);
+
+  const handleSetFrameAsThumbnail = useCallback(async () => {
+    const f = file;
+    if (!f?.id || !f.objectKey) return;
+    const video = immersiveVideoCommentRef.current?.getVideoElement();
+    if (!video || video.videoWidth <= 0) return;
+    video.pause();
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0);
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob((b) => resolve(b), "image/jpeg", 0.88)
+      );
+      if (!blob) return;
+      const token = await getAuthToken(true);
+      if (!token) return;
+      const fd = new FormData();
+      fd.append("image", blob, "frame.jpg");
+      fd.append("object_key", f.objectKey);
+      fd.append("backup_file_id", f.id);
+      fd.append("seek_sec", String(video.currentTime));
+      const res = await fetch("/api/backup/video-thumbnail-upload", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (!res.ok) return;
+      scheduleCloudFilesPostMutationRefresh();
+      setVideoPosterToast(true);
+    } catch {
+      // ignore
+    }
+  }, [file]);
+
+  const immersiveVideoSettingsActions = useMemo(() => {
+    if (!file?.id || !file.objectKey || previewType !== "video") return null;
+    return [
+      {
+        id: "set-frame-thumbnail",
+        label: "Set frame as thumbnail",
+        onSelect: handleSetFrameAsThumbnail,
+      },
+    ];
+  }, [file?.id, file?.objectKey, previewType, handleSetFrameAsThumbnail]);
 
   useEffect(() => {
     if (file?.id) {
@@ -965,6 +1044,7 @@ export default function FilePreviewModal({
                   style={CREATOR_RAW_PORTRAIT_STAGE_SLOT_STYLE}
                 >
                   <VideoWithLUT
+                    ref={immersiveVideoCommentRef}
                     key={file.id ? `file-preview-video:${file.id}` : "file-preview-video"}
                     src={videoSrc}
                     streamUrl={effectiveStream}
@@ -984,10 +1064,12 @@ export default function FilePreviewModal({
                     preferMaxHlsQuality={!!effectiveStream?.includes(".m3u8")}
                     proxyOnlyPlayback={proxyOnlyPlayback}
                     onIntrinsicVideoSize={onIntrinsicVideoSize}
+                    immersiveSettingsActions={immersiveVideoSettingsActions ?? undefined}
                   />
                 </div>
               ) : (
                 <VideoWithLUT
+                  ref={immersiveVideoCommentRef}
                   key={file.id ? `file-preview-video:${file.id}` : "file-preview-video"}
                   src={videoSrc}
                   streamUrl={effectiveStream}
@@ -1003,6 +1085,7 @@ export default function FilePreviewModal({
                   preferMaxHlsQuality={!!effectiveStream?.includes(".m3u8")}
                   proxyOnlyPlayback={proxyOnlyPlayback}
                   onIntrinsicVideoSize={onIntrinsicVideoSize}
+                  immersiveSettingsActions={immersiveVideoSettingsActions ?? undefined}
                 />
               )}
             </div>
@@ -1087,28 +1170,40 @@ export default function FilePreviewModal({
   }
 
   return (
-    <ImmersiveFilePreviewShell
-      variant="app"
-      onClose={onClose}
-      title={file.name}
-      headerActions={headerActions}
-      media={mediaBody}
-      mediaFooter={mediaFooter}
-      splitLayoutGapClassName={
-        previewType === "video" && immersivePortraitStage ? "lg:gap-2.5 xl:gap-3" : undefined
-      }
-      leftStageClassName={
-        previewType === "video"
-          ? `creator-reel-stage lg:justify-center ${immersivePortraitStage ? "md:py-1" : ""}`
-          : undefined
-      }
-      rightRail={
-        file.id ? (
-          <div className="flex h-full min-h-0 flex-col">
-            <FileCommentsPanel fileId={file.id} immersiveChrome />
-          </div>
-        ) : null
-      }
-    />
+    <>
+      <ImmersiveVideoCommentProvider value={immersiveVideoCommentContext}>
+        <ImmersiveFilePreviewShell
+          variant="app"
+          onClose={onClose}
+          title={file.name}
+          headerActions={headerActions}
+          media={mediaBody}
+          mediaFooter={mediaFooter}
+          splitLayoutGapClassName={
+            previewType === "video" && immersivePortraitStage ? "lg:gap-2.5 xl:gap-3" : undefined
+          }
+          leftStageClassName={
+            previewType === "video"
+              ? `creator-reel-stage lg:justify-center ${immersivePortraitStage ? "md:py-1" : ""}`
+              : undefined
+          }
+          rightRail={
+            file.id ? (
+              <div className="flex h-full min-h-0 flex-col">
+                <FileCommentsPanel fileId={file.id} immersiveChrome />
+              </div>
+            ) : null
+          }
+        />
+      </ImmersiveVideoCommentProvider>
+      {videoPosterToast ? (
+        <div
+          role="status"
+          className="pointer-events-none fixed bottom-6 left-1/2 z-[320] -translate-x-1/2 rounded-full bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg ring-1 ring-white/10 dark:bg-white dark:text-neutral-900 dark:ring-black/10"
+        >
+          Thumbnail updated
+        </div>
+      ) : null}
+    </>
   );
 }

@@ -14,9 +14,9 @@ import { shouldUseVideoThumbnailPipeline } from "@/lib/raw-video";
 export function useVideoThumbnail(
   objectKey: string | undefined,
   fileName: string,
-  options: { enabled?: boolean; isVideo?: boolean } = {}
+  options: { enabled?: boolean; isVideo?: boolean; posterRev?: number } = {}
 ): string | null {
-  const { enabled = true, isVideo: isVideoOverride = false } = options;
+  const { enabled = true, isVideo: isVideoOverride = false, posterRev = 0 } = options;
   const [url, setUrl] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
 
@@ -127,6 +127,9 @@ export function useVideoThumbnail(
           object_key: objectKey,
           name: fileName,
         });
+        if (posterRev > 0) {
+          params.set("_rev", String(posterRev));
+        }
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 25000);
         try {
@@ -179,7 +182,7 @@ export function useVideoThumbnail(
       cancelled = true;
       cleanup();
     };
-  }, [objectKey, fileName, enabled, isVideoOverride]);
+  }, [objectKey, fileName, enabled, isVideoOverride, posterRev]);
 
   return url;
 }

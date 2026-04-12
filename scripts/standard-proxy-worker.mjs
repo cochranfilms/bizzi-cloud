@@ -408,7 +408,8 @@ async function processJob(payload) {
       tmpPath,
       payload.videoPosterUploadUrl,
       payload.videoPosterUploadHeaders,
-      { job_id: job.id }
+      { job_id: job.id },
+      typeof payload.videoPosterSeekSec === "number" ? payload.videoPosterSeekSec : 0.5
     );
     const st = await stat(tmpPath);
     const proxyDurationSec = await ffprobeDurationSeconds(tmpPath);

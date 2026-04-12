@@ -1,16 +1,18 @@
 "use client";
 
 import {
+  forwardRef,
   useRef,
   useEffect,
   useLayoutEffect,
   useState,
   useCallback,
   useMemo,
+  useImperativeHandle,
   type CSSProperties,
   type SyntheticEvent,
 } from "react";
-import { Pause, Play, Volume2, VolumeX, Maximize } from "lucide-react";
+import { Pause, Play, Volume2, VolumeX, Maximize, Settings, Image as ImageIcon } from "lucide-react";
 import Hls from "hls.js";
 import { createGalleryHlsInstance } from "@/lib/hls-gallery-player";
 import {
@@ -82,6 +84,18 @@ export interface LUTOption {
   isBuiltin?: boolean;
 }
 
+export type VideoWithLUTHandle = {
+  /** Pauses playback and returns the current playback time in seconds. */
+  pauseAndGetCurrentTime: () => number | null;
+  getVideoElement: () => HTMLVideoElement | null;
+};
+
+export type ImmersiveVideoSettingItem = {
+  id: string;
+  label: string;
+  onSelect: () => void | Promise<void>;
+};
+
 interface VideoWithLUTProps {
   src: string;
   streamUrl?: string | null;
@@ -138,6 +152,8 @@ interface VideoWithLUTProps {
   lutTelemetrySurface?: "hero" | "grid" | "modal";
   lutTelemetryGalleryId?: string;
   lutTelemetryPasswordProtected?: boolean;
+  /** Immersive preview: gear menu entries (e.g. set poster frame). */
+  immersiveSettingsActions?: ImmersiveVideoSettingItem[] | null;
 }
 
 function formatTime(seconds: number): string {
@@ -147,34 +163,38 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function VideoWithLUT({
-  src,
-  streamUrl,
-  className,
-  videoStyle,
-  showLUTOption = false,
-  lutSource = null,
-  lutOptions = [],
-  onLutChange,
-  onLutSelect,
-  creativePreviewOn,
-  compactPreview = false,
-  segmentLoopSeconds = null,
-  frameless = false,
-  sideBySideLut = false,
-  onDisplayReady,
-  preferMaxHlsQuality = false,
-  poster = null,
-  videoObjectFit = "contain",
-  onIntrinsicVideoSize,
-  proxyOnlyPlayback = false,
-  playbackDebugLabel,
-  galleryControlledLut = false,
-  shouldApplyLut = false,
-  lutTelemetrySurface,
-  lutTelemetryGalleryId,
-  lutTelemetryPasswordProtected,
-}: VideoWithLUTProps) {
+const VideoWithLUT = forwardRef<VideoWithLUTHandle, VideoWithLUTProps>(function VideoWithLUT(
+  {
+    src,
+    streamUrl,
+    className,
+    videoStyle,
+    showLUTOption = false,
+    lutSource = null,
+    lutOptions = [],
+    onLutChange,
+    onLutSelect,
+    creativePreviewOn,
+    compactPreview = false,
+    segmentLoopSeconds = null,
+    frameless = false,
+    sideBySideLut = false,
+    onDisplayReady,
+    preferMaxHlsQuality = false,
+    poster = null,
+    videoObjectFit = "contain",
+    onIntrinsicVideoSize,
+    proxyOnlyPlayback = false,
+    playbackDebugLabel,
+    galleryControlledLut = false,
+    shouldApplyLut = false,
+    lutTelemetrySurface,
+    lutTelemetryGalleryId,
+    lutTelemetryPasswordProtected,
+    immersiveSettingsActions = null,
+  },
+  ref,
+) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -919,6 +939,34 @@ export default function VideoWithLUT({
     [onLutSelect]
   );
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      pauseAndGetCurrentTime: () => {
+        const video = videoRef.current;
+        if (!video) return null;
+        video.pause();
+        const t = video.currentTime;
+        return Number.isFinite(t) ? Math.max(0, t) : 0;
+      },
+      getVideoElement: () => videoRef.current,
+    }),
+    [],
+  );
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsWrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      const el = settingsWrapRef.current;
+      if (el && !el.contains(e.target as Node)) setSettingsOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc, true);
+    return () => document.removeEventListener("mousedown", onDoc, true);
+  }, [settingsOpen]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -1343,14 +1391,52 @@ export default function VideoWithLUT({
                 <Volume2 className="h-4 w-4" />
               )}
             </button>
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/20 hover:text-white"
-              aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-            >
-              <Maximize className="h-4 w-4" />
-            </button>
+            <div className="ml-auto flex items-center gap-0.5">
+              {immersiveSettingsActions && immersiveSettingsActions.length > 0 ? (
+                <div className="relative flex" ref={settingsWrapRef}>
+                  <button
+                    type="button"
+                    onClick={() => setSettingsOpen((o) => !o)}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/20 hover:text-white"
+                    aria-label="Video settings"
+                    aria-expanded={settingsOpen}
+                    aria-haspopup="menu"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </button>
+                  {settingsOpen ? (
+                    <div
+                      role="menu"
+                      className="absolute bottom-full right-0 z-50 mb-2 w-[min(16.5rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-white/15 bg-neutral-950/98 py-1 shadow-2xl ring-1 ring-black/50 backdrop-blur-md"
+                    >
+                      {immersiveSettingsActions.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          role="menuitem"
+                          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-white/90 transition-colors hover:bg-white/10"
+                          onClick={async () => {
+                            setSettingsOpen(false);
+                            await item.onSelect();
+                          }}
+                        >
+                          <ImageIcon className="h-4 w-4 shrink-0 text-white/65" aria-hidden />
+                          <span className="min-w-0 flex-1">{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/20 hover:text-white"
+                aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              >
+                <Maximize className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
         )}
@@ -1412,4 +1498,6 @@ export default function VideoWithLUT({
       )}
     </div>
   );
-}
+});
+
+export default VideoWithLUT;

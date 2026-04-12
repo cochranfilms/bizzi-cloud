@@ -360,6 +360,8 @@ export interface StandardClaimResult {
   videoPosterUploadUrl: string;
   videoPosterUploadUrlExpiresInSec: number;
   videoPosterUploadHeaders: Record<string, string>;
+  /** Seconds into proxy MP4 for grid poster extract (user override from backup_files). */
+  videoPosterSeekSec: number;
   lease_expires_at: string;
   max_attempt_deadline_at: string;
   heartbeat_interval_ms: number;
@@ -566,6 +568,15 @@ export async function claimProxyJob(
 
     if (!tryClaim) continue;
 
+    let videoPosterSeekSec = 0.5;
+    if (tryClaim.backupFileId) {
+      const bfSnap = await db.collection("backup_files").doc(tryClaim.backupFileId).get();
+      const t = bfSnap.data()?.video_thumbnail_seek_sec;
+      if (typeof t === "number" && Number.isFinite(t) && t >= 0) {
+        videoPosterSeekSec = t;
+      }
+    }
+
     const sourceDownloadUrl = await createPresignedDownloadUrl(tryClaim.objectKey, ttl);
     const proxyUploadUrl = await createPresignedUploadUrl(tryClaim.proxyKey, "video/mp4", ttl);
     const posterKey = getVideoThumbnailCacheKey(tryClaim.objectKey);
@@ -602,6 +613,7 @@ export async function claimProxyJob(
         "Content-Type": "image/jpeg",
         "x-amz-server-side-encryption": "AES256",
       },
+      videoPosterSeekSec,
       lease_expires_at: leaseUntil,
       max_attempt_deadline_at: deadline,
       heartbeat_interval_ms: PROXY_JOB_HEARTBEAT_INTERVAL_MS,

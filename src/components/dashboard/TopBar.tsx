@@ -574,7 +574,7 @@ export default function TopBar({
           : "border-b border-neutral-200 dark:border-neutral-800"
       }`}
     >
-      <div className="px-4 py-3 md:px-6">
+      <div className="px-4 pb-3 pt-4 md:px-6 md:pb-3 md:pt-5">
         {centerContent ? (
           <div className="flex flex-col gap-3">
             <div className="flex min-h-12 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">

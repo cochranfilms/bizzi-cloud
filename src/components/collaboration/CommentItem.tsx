@@ -13,6 +13,16 @@ interface CommentItemProps {
   immersiveChrome?: boolean;
   /** When `immersiveChrome`, set from parent. Defaults to false (light immersive). */
   immersiveIsDark?: boolean;
+  /** Dashboard custom button / chrome primary; used for video timecode badge. */
+  videoTimestampBadgeHex?: string | null;
+}
+
+function formatVideoCommentTimecode(seconds: number): string {
+  const safe = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  const s = safe % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 function formatCommentTime(iso: string | null | undefined): string {
@@ -46,6 +56,7 @@ export default function CommentItem({
   onDelete,
   immersiveChrome = false,
   immersiveIsDark = false,
+  videoTimestampBadgeHex = null,
 }: CommentItemProps) {
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState(comment.body);
@@ -200,12 +211,22 @@ export default function CommentItem({
               className={
                 immersiveChrome
                   ? immersiveIsDark
-                    ? "mt-1 whitespace-pre-wrap break-words text-sm leading-snug text-white/88"
-                    : "mt-1 whitespace-pre-wrap break-words text-sm leading-snug text-neutral-800"
-                  : "mt-1 whitespace-pre-wrap break-words text-sm leading-snug text-neutral-800 dark:text-neutral-200"
+                    ? "mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-1 whitespace-pre-wrap break-words text-sm leading-snug text-white/88"
+                    : "mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-1 whitespace-pre-wrap break-words text-sm leading-snug text-neutral-800"
+                  : "mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-1 whitespace-pre-wrap break-words text-sm leading-snug text-neutral-800 dark:text-neutral-200"
               }
             >
-              {comment.body}
+              {comment.videoTimestampSec != null && Number.isFinite(comment.videoTimestampSec) ? (
+                <span
+                  className="inline-flex shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-white"
+                  style={{
+                    backgroundColor: videoTimestampBadgeHex?.trim() || "#64748b",
+                  }}
+                >
+                  {formatVideoCommentTimecode(comment.videoTimestampSec)}
+                </span>
+              ) : null}
+              <span className="min-w-0">{comment.body}</span>
             </p>
           )}
         </div>

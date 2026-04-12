@@ -759,7 +759,30 @@ export default function FileGrid({
       }
     ) => {
       const gen = ++loadDriveFilesGenRef.current;
-      if (!options?.silent) setDriveFilesLoading(true);
+      if (!options?.silent) {
+        setDriveFilesLoading(true);
+        const optParentExplicit =
+          options && Object.prototype.hasOwnProperty.call(options, "storageParentOverride");
+        const optParent =
+          optParentExplicit && options
+            ? options.storageParentOverride ?? null
+            : undefined;
+        const parentStale =
+          optParentExplicit && optParent !== storageParentFolderId;
+        const optPathExplicit =
+          options && Object.prototype.hasOwnProperty.call(options, "v2VirtualPathPrefix");
+        const optPathNorm =
+          optPathExplicit && options?.v2VirtualPathPrefix != null
+            ? String(options.v2VirtualPathPrefix).replace(/^\/+/, "")
+            : undefined;
+        const pathStale =
+          optPathNorm !== undefined &&
+          optPathNorm !== (currentDrivePath ?? "").replace(/^\/+/, "");
+        if (driveId !== currentDrive?.id || parentStale || pathStale) {
+          setDriveFiles([]);
+          setV2StorageSubfolders([]);
+        }
+      }
       const parent =
         options && "storageParentOverride" in options
           ? options.storageParentOverride ?? null
@@ -883,7 +906,7 @@ export default function FileGrid({
         }
       }
     },
-    [fetchDriveFiles, linkedDrives, storageParentFolderId, currentDrivePath]
+    [fetchDriveFiles, linkedDrives, storageParentFolderId, currentDrivePath, currentDrive?.id]
   );
 
   const handleV2StorageFolderMutated = useCallback(() => {
@@ -952,6 +975,11 @@ export default function FileGrid({
       );
       setSelectedFileIds(new Set());
       setSelectedFolderKeys(new Set());
+      /** Avoid one frame of parent folder files before URL sync + loadDriveFiles run. */
+      loadDriveFilesGenRef.current += 1;
+      setDriveFiles([]);
+      setV2StorageSubfolders([]);
+      setDriveFilesLoading(true);
       const sp = new URLSearchParams(searchParams.toString());
       sp.set("drive", currentDrive.id);
       sp.set("folder", item.storageFolderId);
@@ -3886,18 +3914,6 @@ export default function FileGrid({
                 >
                   <Upload className="h-4 w-4 shrink-0" />
                   File Upload
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={rowClass}
-                  onClick={() => {
-                    setWorkspaceContextMenu(null);
-                    workspaceQuickActionsRegistry.openSharedFolder();
-                  }}
-                >
-                  <Share2 className="h-4 w-4 shrink-0" />
-                  Shared Folder
                 </button>
                 {isStorageV2FolderBrowse ? (
                   <>

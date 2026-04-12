@@ -216,9 +216,28 @@ export async function GET(request: Request) {
       });
     };
 
+    let posterSeekSec = 0.5;
+    try {
+      const dbSeek = getAdminFirestore();
+      const seekSnap = await dbSeek
+        .collection("backup_files")
+        .where("object_key", "==", objectKey)
+        .limit(10)
+        .get();
+      for (const d of seekSnap.docs) {
+        const t = d.data().video_thumbnail_seek_sec;
+        if (typeof t === "number" && Number.isFinite(t) && t >= 0) {
+          posterSeekSec = t;
+          break;
+        }
+      }
+    } catch (seekErr) {
+      console.warn("[video-thumbnail] seek lookup failed, using default:", seekErr);
+    }
+
     let thumbBuffer: Buffer;
     try {
-      thumbBuffer = await runFfmpeg(0.5);
+      thumbBuffer = await runFfmpeg(posterSeekSec);
     } catch (firstErr) {
       try {
         thumbBuffer = await runFfmpeg(0);
