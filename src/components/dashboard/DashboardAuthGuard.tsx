@@ -7,6 +7,10 @@ import { isFirebaseConfigured } from "@/lib/firebase/client";
 import DashboardRouteFade, {
   DashboardLoadingPlaceholder,
 } from "@/components/dashboard/DashboardRouteFade";
+import {
+  dashboardPerfMarks,
+  markDashboardPerf,
+} from "@/lib/dashboard-client-timing";
 
 export default function DashboardAuthGuard({
   children,
@@ -55,6 +59,7 @@ export default function DashboardAuthGuard({
             router.replace("/account/personal-deleted");
             return;
           }
+          markDashboardPerf(dashboardPerfMarks.accountStatusOk);
         }
         setStatusChecked(true);
       } catch {

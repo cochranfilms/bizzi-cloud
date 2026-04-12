@@ -50,6 +50,11 @@ import { compareFolderItemsTransfersRootFirst } from "@/lib/storage-folders/fold
 import ConsolidateIntoStorageModal from "./ConsolidateIntoStorageModal";
 import { isLegacyCustomLinkedDriveForConsolidation } from "@/lib/storage-folder-model-policy";
 import type { LinkedDrive } from "@/types/backup";
+import {
+  dashboardPerfMarks,
+  logDashboardPerfMeasures,
+  markDashboardPerf,
+} from "@/lib/dashboard-client-timing";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -1231,6 +1236,15 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     !powerUpContextLoading &&
     !pinnedLoading &&
     (isEnterpriseHome ? !backupDrivesLoading : !subscriptionLoading);
+
+  const homeFolderPerfMarked = useRef(false);
+  useEffect(() => {
+    if (basePath !== "/dashboard") return;
+    if (!homeViewReady || homeFolderPerfMarked.current) return;
+    homeFolderPerfMarked.current = true;
+    markDashboardPerf(dashboardPerfMarks.folderGridReady);
+    queueMicrotask(() => logDashboardPerfMeasures());
+  }, [basePath, homeViewReady]);
 
   const showDragRect =
     dragState?.isActive &&

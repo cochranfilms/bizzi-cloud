@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, createContext, useContext } from "react";
+import { useState, createContext, useContext, useLayoutEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { PanelRight } from "lucide-react";
 import { useDashboardAppearance } from "@/context/DashboardAppearanceContext";
@@ -18,6 +18,10 @@ import { useAuth } from "@/context/AuthContext";
 import { useSubscription } from "@/hooks/useSubscription";
 import Link from "next/link";
 import { resolveDashboardChromeThemeVariables } from "@/lib/dashboard-chrome-theme";
+import {
+  dashboardPerfMarks,
+  markDashboardPerf,
+} from "@/lib/dashboard-client-timing";
 
 const RightPanelContext = createContext<{
   rightPanelOpen: boolean;
@@ -37,6 +41,13 @@ export default function DashboardShell({
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const { cssVariables, uiThemeOverride, buttonColor } = useDashboardAppearance();
   const pathname = usePathname();
+  const shellMarkOnce = useRef(false);
+  useLayoutEffect(() => {
+    if (shellMarkOnce.current) return;
+    if (typeof pathname !== "string" || !pathname.startsWith("/dashboard")) return;
+    shellMarkOnce.current = true;
+    markDashboardPerf(dashboardPerfMarks.shellLayout);
+  }, [pathname]);
   const teamWs = usePersonalTeamWorkspace();
   const { user } = useAuth();
   const { teamSetupMode } = useSubscription();
