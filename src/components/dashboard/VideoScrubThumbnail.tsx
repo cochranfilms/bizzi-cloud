@@ -159,6 +159,13 @@ export default function VideoScrubThumbnail({
   const hasStreamReady = !!(streamUrl && !streamLoadFailed);
   const showStreamSurface = hasStreamReady && (isHovering || eagerLoadStream);
 
+  /** Letterboxed API posters + video `poster` fight object-cover; use neutral + decoded frames only. */
+  const hideLetterboxedPoster =
+    objectFit === "object-cover" &&
+    !streamLoadFailed &&
+    !hasStreamReady &&
+    (eagerLoadStream || isHovering);
+
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !showStreamSurface) return;
@@ -220,7 +227,8 @@ export default function VideoScrubThumbnail({
 
   useEffect(() => () => clearScrubIdleTimer(), [clearScrubIdleTimer]);
 
-  const showThumbnail = !showStreamSurface && (thumbnailUrl || isLoading);
+  const showThumbnail =
+    !showStreamSurface && !hideLetterboxedPoster && (thumbnailUrl || isLoading);
 
   return (
     <div
@@ -234,7 +242,7 @@ export default function VideoScrubThumbnail({
         <video
           ref={videoRef}
           src={streamUrl ?? undefined}
-          poster={thumbnailUrl ?? undefined}
+          poster={objectFit === "object-cover" ? undefined : thumbnailUrl ?? undefined}
           muted
           playsInline
           preload={eagerLoadStream ? "auto" : "metadata"}
@@ -265,12 +273,15 @@ export default function VideoScrubThumbnail({
             className={`pointer-events-none absolute inset-0 h-full w-full ${objectFit}`}
           />
         </>
+      ) : hideLetterboxedPoster ? (
+        <div className="pointer-events-none absolute inset-0 bg-neutral-900" aria-hidden />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center">
           <Film className="h-8 w-8 text-neutral-500 dark:text-neutral-400" />
         </div>
       )}
-      {showPlayIcon && (showStreamSurface || showThumbnail || isLoading) && (
+      {showPlayIcon &&
+        (showStreamSurface || showThumbnail || isLoading || hideLetterboxedPoster) && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/50 shadow-lg">
             <Play className="ml-1 h-6 w-6 fill-white text-white" />

@@ -292,8 +292,6 @@ export default function FileCard({
   const sizeClasses = FILE_SIZE_CLASSES[layoutSize];
   const aspectClass = getCardAspectClass(layoutAspectRatio);
   const objectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
-  /** Grid video tiles always cover: poster JPEGs are often letterboxed 16:9 while the proxy stream is true 9:16. */
-  const videoObjectFit = "object-cover" as const;
 
   const creativeThumb = resolveCreativeProjectTile(recentFileToCreativeThumbnailSource(file));
   const brandedTileSize =
@@ -517,7 +515,7 @@ export default function FileCard({
             fetchStreamUrl={() => fetchVideoStreamUrl(file.objectKey)}
             thumbnailUrl={videoThumbnailUrl ?? thumbnailUrl}
             showPlayIcon
-            objectFit={videoObjectFit}
+            objectFit={objectFit}
             eagerLoadStream={isInView}
             className="absolute inset-0 h-full min-h-0 w-full"
           />
