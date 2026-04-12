@@ -4,7 +4,18 @@ import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, Check, Download, Film, Images, Send, Share2 } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  Download,
+  Film,
+  Folder,
+  FolderInput,
+  Images,
+  Pin,
+  Send,
+  Share2,
+} from "lucide-react";
 import { MOVE_ALREADY_AT_DESTINATION } from "@/lib/move-and-folder-naming";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import {
@@ -18,6 +29,7 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { useBackup } from "@/context/BackupContext";
 import FolderCard, { type FolderItem } from "./FolderCard";
+import ItemActionsMenu from "./ItemActionsMenu";
 import FileCard from "./FileCard";
 import FileListRow from "./FileListRow";
 import FolderListRow from "./FolderListRow";
@@ -59,6 +71,7 @@ import {
 const DRAG_THRESHOLD_PX = 5;
 
 import {
+  DND_MOVE_MIME,
   getDragMovePayload,
   getMovePayloadFromDragSource,
   setDragMovePayload,
@@ -100,6 +113,17 @@ function sameHomeFolderStripeTarget(a: FolderItem, b: FolderItem): boolean {
   return false;
 }
 
+function homeStripeFolderPinTarget(item: FolderItem): { pinId: string; label: string } | null {
+  if (item.storageFolderId && item.storageLinkedDriveId) {
+    return {
+      pinId: buildStorageV2FolderPinId(item.storageLinkedDriveId, item.storageFolderId),
+      label: item.name,
+    };
+  }
+  if (item.driveId) return { pinId: item.driveId, label: item.name };
+  return null;
+}
+
 export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorageViewProps) {
   const { user } = useAuth();
   const router = useRouter();
@@ -133,11 +157,14 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     trashStorageFolderSubtree,
     moveAllFilesUnderStoragePath,
   } = useCloudFiles();
-  const {
+   const {
     pinnedFolderIds,
     pinnedFolderLabels,
     pinnedFileIds,
     loading: pinnedLoading,
+    pinItem,
+    unpinItem,
+    isPinned,
     refetch: refetchPinned,
   } = usePinned();
   const { planId, loading: subscriptionLoading } = useSubscription();
@@ -1184,6 +1211,34 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     setTransferModalOpen(true);
   }, [selectedFileIds, selectedFolderKeys, fetchFilesByIds, getFileIdsForBulkShare]);
 
+  const openStripeFolderShare = useCallback(
+    async (item: FolderItem) => {
+      if (item.storageFolderId && item.storageLinkedDriveId) {
+        const ids = await getFileIdsForBulkShare(
+          [],
+          [],
+          undefined,
+          [{ driveId: item.storageLinkedDriveId, storageFolderId: item.storageFolderId }]
+        );
+        if (ids.length === 0) return;
+        setShareFolderName(item.name);
+        setShareReferencedFileIds(ids);
+        setShareDriveId(null);
+        setShareInitialData(null);
+        setShareModalOpen(true);
+        return;
+      }
+      const driveId = item.driveId;
+      if (!driveId) return;
+      setShareFolderName(item.name);
+      setShareReferencedFileIds([]);
+      setShareDriveId(driveId);
+      setShareInitialData(null);
+      setShareModalOpen(true);
+    },
+    [getFileIdsForBulkShare]
+  );
+
   const handleBulkShare = useCallback(async () => {
     const fileIds = Array.from(selectedFileIds);
     const folderKeys = Array.from(selectedFolderKeys);
@@ -1460,171 +1515,381 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
               </table>
             </div>
           ) : (
-            <div
-              className={`grid ${gridGapClass} grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6`}
-            >
-              {pinnedFolderItems.map((item) => {
-                const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
-                const driveId = item.driveId ?? "";
-                const isFolderInSelection = selectedFolderKeys.has(item.key);
-                const isDropTarget =
-                  !!driveId &&
-                  !isFolderInSelection &&
-                  linkedDrives.some((d) => d.id === driveId);
-                const canDragFolder = !!item.driveId && !item.preventMove;
-                return (
-                  <div
-                    key={item.key}
-                    data-selectable-item
-                    data-item-type="folder"
-                    data-item-key={item.key}
-                    draggable={canDragFolder}
-                    onDragStart={handleDragStart}
-                    className={
-                      [
-                        "h-full min-h-0 min-w-0 w-full max-w-full",
-                        canDragFolder && "cursor-grab active:cursor-grabbing",
-                      ]
-                        .filter(Boolean)
-                        .join(" ") || undefined
-                    }
-                  >
-                    <FolderCard
-                      item={item}
-                      topBadge="Pinned"
-                      isDropTarget={isDropTarget}
-                      onItemsDropped={handleDropOnFolder}
-                      onClick={() => openFolderFromPin(item)}
-                      layoutSize={viewMode === "thumbnail" ? "large" : "small"}
-                      layoutAspectRatio={aspectRatio}
-                      showCardInfo={showCardInfo}
-                      onDelete={
-                        drive && !item.preventDelete
-                          ? async () => {
-                              const msg = item.items === 0
-                                ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
-                                : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
-                              const ok = await confirm({ message: msg, destructive: true });
-                              if (ok) {
-                                await deleteFolder(drive, item.items);
-                                await refetch();
-                                await refetchPinned();
-                                loadPinnedFiles();
-                              }
-                            }
-                          : undefined
-                      }
-                      selectable={!!drive && !item.preventDelete}
-                      selected={selectedFolderKeys.has(item.key)}
-                      onSelect={() => toggleFolderSelection(item.key)}
-                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
-                    />
-                  </div>
-                );
-              })}
-              {unpinnedHomeStripeFolders.map((item) => {
-                const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
-                const offerConsolidate =
-                  !!drive && isLegacyCustomLinkedDriveForConsolidation(drive);
-                const driveId = item.driveId ?? "";
-                const isFolderInSelection = selectedFolderKeys.has(item.key);
-                const isDropTarget =
-                  !!driveId &&
-                  !item.virtualFolder &&
-                  !isFolderInSelection &&
-                  linkedDrives.some((d) => d.id === driveId);
-                const canDragFolder = !!item.driveId && !item.preventMove;
-                return (
-                  <div
-                    key={item.key}
-                    data-selectable-item
-                    data-item-type="folder"
-                    data-item-key={item.key}
-                    draggable={canDragFolder}
-                    onDragStart={handleDragStart}
-                    className={
-                      [
-                        "h-full min-h-0 min-w-0 w-full max-w-full",
-                        canDragFolder ? "cursor-grab active:cursor-grabbing" : "",
-                        homeBizziFolderOpenPulseKey === item.key ? "home-bizzi-folder-card-open-pulse" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ") || undefined
-                    }
-                  >
-                    <FolderCard
-                      item={item}
-                      isDropTarget={isDropTarget}
-                      onItemsDropped={handleDropOnFolder}
-                      onClick={() => openBizziCloudFolderItem(item)}
-                      layoutSize={viewMode === "thumbnail" ? "large" : "small"}
-                      layoutAspectRatio={aspectRatio}
-                      showCardInfo={showCardInfo}
-                      revealFadeIn
-                      onDelete={
-                        !item.preventDelete &&
-                        (item.storageFolderId ||
-                          (item.virtualFolder && !!item.pathPrefix) ||
-                          drive)
-                          ? () => void handleDeleteBizziCloudFolderItem(item)
-                          : undefined
-                      }
-                      selectable={!!drive && (!item.preventDelete || !!item.virtualFolder)}
-                      selected={selectedFolderKeys.has(item.key)}
-                      onSelect={() => toggleFolderSelection(item.key)}
-                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
-                      storagePickerDriveLabel={
-                        drive ? teamAwareBaseName(drive.name) : "Storage"
-                      }
-                      onStorageFolderMutated={afterStorageMigrationMutate}
-                      onConsolidateMenuSelect={
-                        offerConsolidate ? () => setConsolidateSourceDrive(drive) : undefined
-                      }
-                    />
-                  </div>
-                );
-              })}
-              {pinnedFiles.map((file) => {
-                const isPkg = isMacosPackageFileRow(file);
-                return (
-                  <div
-                    key={file.id}
-                    data-selectable-item
-                    data-item-type="file"
-                    data-item-id={file.id}
-                    draggable={!!file.driveId}
-                    onDragStart={handleDragStart}
-                    className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
-                  >
-                    <FileCard
-                      file={file}
-                      topBadge="Pinned"
-                      onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
-                      onDelete={async () => {
-                        await deleteFile(file.id);
-                        syncPinsAfterFileMutate();
-                      }}
-                      onDownloadPackage={
-                        isPkg && file.macosPackageId
-                          ? () => downloadMacosPackageZip(file.macosPackageId!)
-                          : undefined
-                      }
-                      onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
-                      onMacosPackageNavigate={
-                        isPkg ? () => navigateIntoMacosPackage(file) : undefined
-                      }
-                      selectable
-                      selected={selectedFileIds.has(file.id)}
-                      onSelect={() => toggleFileSelection(file.id)}
-                      layoutSize={viewMode === "thumbnail" ? "large" : "small"}
-                      layoutAspectRatio={aspectRatio}
-                      thumbnailScale={thumbnailScale}
-                      showCardInfo={showCardInfo}
-                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
-                    />
-                  </div>
-                );
-              })}
+            <div className="space-y-3">
+              {pinnedFolderItems.length + unpinnedHomeStripeFolders.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {pinnedFolderItems.map((item) => {
+                    const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                    const driveId = item.driveId ?? "";
+                    const isFolderInSelection = selectedFolderKeys.has(item.key);
+                    const isDropTarget =
+                      !!driveId &&
+                      !isFolderInSelection &&
+                      linkedDrives.some((d) => d.id === driveId);
+                    const canDragFolder = !!item.driveId && !item.preventMove;
+                    const dropDriveId = item.driveId ?? item.storageLinkedDriveId ?? "";
+                    const pinTarget = homeStripeFolderPinTarget(item);
+                    const folderPinned = pinTarget ? isPinned("folder", pinTarget.pinId) : false;
+                    const menuActions = [
+                      ...(!item.hideShare && (item.driveId || item.storageLinkedDriveId)
+                        ? [
+                            {
+                              id: "share",
+                              label: "Share",
+                              icon: <Share2 className="h-4 w-4" />,
+                              onClick: () => void openStripeFolderShare(item),
+                            },
+                          ]
+                        : []),
+                      ...(pinTarget
+                        ? [
+                            {
+                              id: folderPinned ? "unpin" : "pin",
+                              label: folderPinned ? "Unpin" : "Pin",
+                              icon: <Pin className="h-4 w-4" />,
+                              onClick: () =>
+                                void (async () => {
+                                  if (folderPinned) await unpinItem("folder", pinTarget.pinId);
+                                  else await pinItem("folder", pinTarget.pinId, { displayLabel: pinTarget.label });
+                                  await refetchPinned();
+                                })(),
+                            },
+                          ]
+                        : []),
+                      ...(drive && !item.preventDelete
+                        ? [
+                            {
+                              id: "delete",
+                              label: "Delete",
+                              onClick: () =>
+                                void (async () => {
+                                  const msg =
+                                    item.items === 0
+                                      ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+                                      : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
+                                  const ok = await confirm({ message: msg, destructive: true });
+                                  if (ok) {
+                                    await deleteFolder(drive, item.items);
+                                    await refetch();
+                                    await refetchPinned();
+                                    loadPinnedFiles();
+                                  }
+                                })(),
+                              destructive: true as const,
+                            },
+                          ]
+                        : []),
+                    ];
+                    return (
+                      <div
+                        key={item.key}
+                        data-selectable-item
+                        data-item-type="folder"
+                        data-item-key={item.key}
+                        draggable={canDragFolder}
+                        onDragStart={handleDragStart}
+                        className={
+                          [
+                            "min-w-0 max-w-[min(100%,18rem)] shrink-0",
+                            canDragFolder && "cursor-grab active:cursor-grabbing",
+                          ]
+                            .filter(Boolean)
+                            .join(" ") || undefined
+                        }
+                      >
+                        <div
+                          className={[
+                            "group relative flex min-h-[2.25rem] items-center gap-2 rounded-lg border px-2 py-1 pr-8 transition-colors",
+                            "border-neutral-200/90 bg-white/95 dark:border-neutral-700 dark:bg-neutral-900/85",
+                            selectedFolderKeys.has(item.key)
+                              ? "border-bizzi-blue ring-1 ring-bizzi-blue/35 dark:border-bizzi-cyan"
+                              : "",
+                            isDropTarget ? "border-bizzi-blue/60 bg-bizzi-blue/[0.06] dark:border-bizzi-cyan/50" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          onDragOver={
+                            isDropTarget
+                              ? (e) => {
+                                  if (!Array.from(e.dataTransfer.types).includes(DND_MOVE_MIME)) return;
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  e.dataTransfer.dropEffect = "move";
+                                }
+                              : undefined
+                          }
+                          onDrop={
+                            isDropTarget
+                              ? (e) => {
+                                  if (!dropDriveId) return;
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const target: FolderDropMoveTarget = {
+                                    driveId: dropDriveId,
+                                    ...(item.storageFolderId ? { storageFolderId: item.storageFolderId } : {}),
+                                  };
+                                  void handleDropOnFolder(target, e);
+                                }
+                              : undefined
+                          }
+                        >
+                          {!!drive && !item.preventDelete ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFolderSelection(item.key);
+                              }}
+                              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${
+                                selectedFolderKeys.has(item.key)
+                                  ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-cyan dark:bg-bizzi-cyan"
+                                  : "border-neutral-300 bg-transparent dark:border-neutral-600"
+                              }`}
+                              aria-label={selectedFolderKeys.has(item.key) ? "Deselect" : "Select"}
+                              aria-pressed={selectedFolderKeys.has(item.key)}
+                            >
+                              {selectedFolderKeys.has(item.key) ? (
+                                <Check className="h-3 w-3 text-white stroke-[3]" />
+                              ) : null}
+                            </button>
+                          ) : null}
+                          <Folder
+                            className="h-4 w-4 shrink-0 text-bizzi-blue dark:text-bizzi-cyan"
+                            strokeWidth={2}
+                            aria-hidden
+                          />
+                          <button
+                            type="button"
+                            onClick={() => openFolderFromPin(item)}
+                            className="min-w-0 flex-1 truncate text-left text-sm font-medium text-neutral-900 dark:text-white"
+                            title={item.name}
+                          >
+                            {item.name}
+                          </button>
+                          <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                            Pinned
+                          </span>
+                          {menuActions.length > 0 ? (
+                            <div className="absolute right-1 top-1/2 z-10 -translate-y-1/2">
+                              <ItemActionsMenu actions={menuActions} alignRight ariaLabel={`Actions for ${item.name}`} />
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {unpinnedHomeStripeFolders.map((item) => {
+                    const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                    const offerConsolidate =
+                      !!drive && isLegacyCustomLinkedDriveForConsolidation(drive);
+                    const driveId = item.driveId ?? "";
+                    const isFolderInSelection = selectedFolderKeys.has(item.key);
+                    const isDropTarget =
+                      !!driveId &&
+                      !item.virtualFolder &&
+                      !isFolderInSelection &&
+                      linkedDrives.some((d) => d.id === driveId);
+                    const canDragFolder = !!item.driveId && !item.preventMove;
+                    const dropDriveId = item.driveId ?? item.storageLinkedDriveId ?? "";
+                    const pinTarget = homeStripeFolderPinTarget(item);
+                    const folderPinned = pinTarget ? isPinned("folder", pinTarget.pinId) : false;
+                    const onDeleteStripe =
+                      !item.preventDelete &&
+                      (item.storageFolderId || (item.virtualFolder && !!item.pathPrefix) || drive)
+                        ? () => void handleDeleteBizziCloudFolderItem(item)
+                        : undefined;
+                    const menuActions = [
+                      ...(!item.hideShare && (item.driveId || item.storageLinkedDriveId)
+                        ? [
+                            {
+                              id: "share",
+                              label: "Share",
+                              icon: <Share2 className="h-4 w-4" />,
+                              onClick: () => void openStripeFolderShare(item),
+                            },
+                          ]
+                        : []),
+                      ...(pinTarget
+                        ? [
+                            {
+                              id: folderPinned ? "unpin" : "pin",
+                              label: folderPinned ? "Unpin" : "Pin",
+                              icon: <Pin className="h-4 w-4" />,
+                              onClick: () =>
+                                void (async () => {
+                                  if (folderPinned) await unpinItem("folder", pinTarget.pinId);
+                                  else await pinItem("folder", pinTarget.pinId, { displayLabel: pinTarget.label });
+                                  await refetchPinned();
+                                })(),
+                            },
+                          ]
+                        : []),
+                      ...(offerConsolidate
+                        ? [
+                            {
+                              id: "consolidate-into-storage",
+                              label: "Consolidate into Storage",
+                              icon: <FolderInput className="h-4 w-4" />,
+                              onClick: () => drive && setConsolidateSourceDrive(drive),
+                            },
+                          ]
+                        : []),
+                      ...(onDeleteStripe
+                        ? [
+                            {
+                              id: "delete",
+                              label: "Delete",
+                              onClick: onDeleteStripe,
+                              destructive: true as const,
+                            },
+                          ]
+                        : []),
+                    ];
+                    return (
+                      <div
+                        key={item.key}
+                        data-selectable-item
+                        data-item-type="folder"
+                        data-item-key={item.key}
+                        draggable={canDragFolder}
+                        onDragStart={handleDragStart}
+                        className={
+                          [
+                            "min-w-0 max-w-[min(100%,18rem)] shrink-0",
+                            canDragFolder ? "cursor-grab active:cursor-grabbing" : "",
+                            homeBizziFolderOpenPulseKey === item.key ? "home-bizzi-folder-card-open-pulse" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ") || undefined
+                        }
+                      >
+                        <div
+                          className={[
+                            "group relative flex min-h-[2.25rem] items-center gap-2 rounded-lg border px-2 py-1 pr-8 transition-colors",
+                            "border-neutral-200/90 bg-white/95 dark:border-neutral-700 dark:bg-neutral-900/85",
+                            selectedFolderKeys.has(item.key)
+                              ? "border-bizzi-blue ring-1 ring-bizzi-blue/35 dark:border-bizzi-cyan"
+                              : "",
+                            isDropTarget ? "border-bizzi-blue/60 bg-bizzi-blue/[0.06] dark:border-bizzi-cyan/50" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          onDragOver={
+                            isDropTarget
+                              ? (e) => {
+                                  if (!Array.from(e.dataTransfer.types).includes(DND_MOVE_MIME)) return;
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  e.dataTransfer.dropEffect = "move";
+                                }
+                              : undefined
+                          }
+                          onDrop={
+                            isDropTarget
+                              ? (e) => {
+                                  if (!dropDriveId) return;
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const target: FolderDropMoveTarget = {
+                                    driveId: dropDriveId,
+                                    ...(item.storageFolderId ? { storageFolderId: item.storageFolderId } : {}),
+                                  };
+                                  void handleDropOnFolder(target, e);
+                                }
+                              : undefined
+                          }
+                        >
+                          {!!drive && (!item.preventDelete || !!item.virtualFolder) ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFolderSelection(item.key);
+                              }}
+                              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${
+                                selectedFolderKeys.has(item.key)
+                                  ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-cyan dark:bg-bizzi-cyan"
+                                  : "border-neutral-300 bg-transparent dark:border-neutral-600"
+                              }`}
+                              aria-label={selectedFolderKeys.has(item.key) ? "Deselect" : "Select"}
+                              aria-pressed={selectedFolderKeys.has(item.key)}
+                            >
+                              {selectedFolderKeys.has(item.key) ? (
+                                <Check className="h-3 w-3 text-white stroke-[3]" />
+                              ) : null}
+                            </button>
+                          ) : null}
+                          <Folder
+                            className="h-4 w-4 shrink-0 text-bizzi-blue dark:text-bizzi-cyan"
+                            strokeWidth={2}
+                            aria-hidden
+                          />
+                          <button
+                            type="button"
+                            onClick={() => openBizziCloudFolderItem(item)}
+                            className="min-w-0 flex-1 truncate text-left text-sm font-medium text-neutral-900 dark:text-white"
+                            title={item.name}
+                          >
+                            {item.name}
+                          </button>
+                          {menuActions.length > 0 ? (
+                            <div className="absolute right-1 top-1/2 z-10 -translate-y-1/2">
+                              <ItemActionsMenu actions={menuActions} alignRight ariaLabel={`Actions for ${item.name}`} />
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {pinnedFiles.length > 0 ? (
+                <div
+                  className={`grid ${gridGapClass} grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6`}
+                >
+                  {pinnedFiles.map((file) => {
+                    const isPkg = isMacosPackageFileRow(file);
+                    return (
+                      <div
+                        key={file.id}
+                        data-selectable-item
+                        data-item-type="file"
+                        data-item-id={file.id}
+                        draggable={!!file.driveId}
+                        onDragStart={handleDragStart}
+                        className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
+                      >
+                        <FileCard
+                          file={file}
+                          topBadge="Pinned"
+                          onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
+                          onDelete={async () => {
+                            await deleteFile(file.id);
+                            syncPinsAfterFileMutate();
+                          }}
+                          onDownloadPackage={
+                            isPkg && file.macosPackageId
+                              ? () => downloadMacosPackageZip(file.macosPackageId!)
+                              : undefined
+                          }
+                          onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                          onMacosPackageNavigate={
+                            isPkg ? () => navigateIntoMacosPackage(file) : undefined
+                          }
+                          selectable
+                          selected={selectedFileIds.has(file.id)}
+                          onSelect={() => toggleFileSelection(file.id)}
+                          layoutSize={viewMode === "thumbnail" ? "large" : "small"}
+                          layoutAspectRatio={aspectRatio}
+                          thumbnailScale={thumbnailScale}
+                          showCardInfo={showCardInfo}
+                          presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
           )}
         </section>

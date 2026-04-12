@@ -7,11 +7,17 @@ import {
   Check,
   CheckSquare,
   ChevronLeft,
+  Cloud,
   Film,
   Filter,
+  FolderInput,
+  FolderPlus,
   Images,
   Loader2,
-  Cloud,
+  Pin,
+  Pencil,
+  Share2,
+  Upload,
 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
@@ -63,9 +69,7 @@ import { BulkActionBar } from "./BulkActionBar";
 import BulkMoveModal from "./BulkMoveModal";
 import CreateTransferModal, { type TransferModalFile } from "./CreateTransferModal";
 import ShareModal from "./ShareModal";
-import StorageLocationMenu from "./StorageLocationMenu";
 import RenameModal from "./RenameModal";
-import CreateFolderModal from "./CreateFolderModal";
 import StorageFolderTreePickerModal from "./StorageFolderTreePickerModal";
 import { FileFiltersTopBarChrome, FileFiltersExpandedStrip } from "@/components/filters/FileFiltersToolbar";
 import { FilesFilterTopChromeContext } from "@/context/FilesFilterTopChromeContext";
@@ -101,6 +105,7 @@ import {
 } from "@/lib/gallery-media-path";
 import { resolveUploadDestination } from "@/lib/upload-destination-resolve";
 import { useUppyUpload } from "@/context/UppyUploadContext";
+import { workspaceQuickActionsRegistry } from "@/lib/workspace-quick-actions-registry";
 
 function mergeDisplayedFilesWithMacosPackages(
   displayedFiles: RecentFile[],
@@ -316,9 +321,12 @@ export default function FileGrid({
   const [storageUpgradeError, setStorageUpgradeError] = useState<string | null>(null);
   const [storageV2MigrateLoading, setStorageV2MigrateLoading] = useState(false);
   const [storageContextFolderVersion, setStorageContextFolderVersion] = useState<number | null>(null);
-  const [storagePathCreateOpen, setStoragePathCreateOpen] = useState(false);
   const [storagePathRenameOpen, setStoragePathRenameOpen] = useState(false);
   const [storagePathMoveOpen, setStoragePathMoveOpen] = useState(false);
+  const [workspaceContextMenu, setWorkspaceContextMenu] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const workspaceContextMenuRef = useRef<HTMLDivElement | null>(null);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [quickFiltersOpen, setQuickFiltersOpen] = useState(false);
   const searchParams = useSearchParams();
@@ -968,7 +976,6 @@ export default function FileGrid({
     setStorageFolderListError(null);
     setStorageUpgradeError(null);
     setStorageContextFolderVersion(null);
-    setStoragePathCreateOpen(false);
     setStoragePathRenameOpen(false);
     setStoragePathMoveOpen(false);
     setSelectedFileIds(new Set());
@@ -1181,6 +1188,46 @@ export default function FileGrid({
     unpinItem,
     refetchPinned,
   ]);
+
+  useEffect(() => {
+    workspaceQuickActionsRegistry.setFileGridV2Handlers({
+      shareCurrentPath: openStoragePathShare,
+      togglePinCurrentPath: toggleStoragePathPin,
+      openRenameCurrentPath: () => setStoragePathRenameOpen(true),
+      openMoveCurrentPath: () => setStoragePathMoveOpen(true),
+    });
+    return () => workspaceQuickActionsRegistry.setFileGridV2Handlers(null);
+  }, [openStoragePathShare, toggleStoragePathPin]);
+
+  const handleWorkspaceBackgroundContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (!currentDrive) return;
+      const t = e.target as HTMLElement;
+      if (t.closest("[data-selectable-item]")) return;
+      if (t.closest("button,a,input,textarea,select,th,td,[role='dialog']")) return;
+      e.preventDefault();
+      setWorkspaceContextMenu({ x: e.clientX, y: e.clientY });
+    },
+    [currentDrive]
+  );
+
+  useEffect(() => {
+    if (!workspaceContextMenu) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") setWorkspaceContextMenu(null);
+    };
+    const onDown = (ev: MouseEvent) => {
+      const el = workspaceContextMenuRef.current;
+      if (el?.contains(ev.target as Node)) return;
+      setWorkspaceContextMenu(null);
+    };
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown, true);
+    };
+  }, [workspaceContextMenu]);
 
   const handleFolderBrowseBack = useCallback(() => {
     if (isStorageV2FolderBrowse && storageParentFolderId) {
@@ -1522,13 +1569,6 @@ export default function FileGrid({
       currentDrive.name
     );
   }, [currentDrive, useFilteredScoped, displayedFiles, macosPackagesForFolder]);
-
-  const showFolderLoadingPlaceholder =
-    !!currentDrive &&
-    !useFilteredScoped &&
-    driveFilesLoading &&
-    subfolderItems.length === 0 &&
-    displayedFilesWithMacosPackages.length === 0;
 
   useEffect(() => {
     if (!packageInfoId) {
@@ -2370,6 +2410,27 @@ export default function FileGrid({
         currentDriveMeta?.is_creator_raw !== true)
   );
   const embeddedFolderGridRevealClass = embeddedFolderBrowse ? "min-h-0" : "contents";
+  const gridSubfolderItems = useMemo(() => {
+    const hideRootDuplicatesInHomeInline =
+      embeddedFolderBrowse &&
+      isStorageV2FolderBrowse &&
+      !storageParentFolderId &&
+      !storageV2PathPrefixNorm;
+    if (hideRootDuplicatesInHomeInline) return [];
+    return subfolderItems;
+  }, [
+    embeddedFolderBrowse,
+    isStorageV2FolderBrowse,
+    storageParentFolderId,
+    storageV2PathPrefixNorm,
+    subfolderItems,
+  ]);
+  const showFolderLoadingPlaceholder =
+    !!currentDrive &&
+    !useFilteredScoped &&
+    driveFilesLoading &&
+    gridSubfolderItems.length === 0 &&
+    displayedFilesWithMacosPackages.length === 0;
   const recentsRootReady = !loading && !subscriptionLoading && !powerUpContextLoading;
   const filesLandingRecentsReady =
     !filesLandingRecentsMode ||
@@ -2465,6 +2526,7 @@ export default function FileGrid({
         className="min-h-0 flex-1 overflow-auto space-y-0"
         data-scroll-container
         data-view-type={currentDrive ? "folder" : "all-files"}
+        onContextMenu={handleWorkspaceBackgroundContextMenu}
       >
       <FilesViewWrapper>
       {currentDrive &&
@@ -2515,23 +2577,6 @@ export default function FileGrid({
                   ) : (
                     <div className="min-w-0 flex-1" aria-hidden />
                   )}
-                  {isStorageV2FolderBrowse ? (
-                    <StorageLocationMenu
-                      triggerVariant="icon"
-                      pathLabel={storagePathMenuLabel}
-                      isInsideSubfolder={!!storageParentFolderId}
-                      folderPinned={storageMenuFolderPinned}
-                      onNewFolder={() => setStoragePathCreateOpen(true)}
-                      onRename={
-                        storageParentFolderId ? () => setStoragePathRenameOpen(true) : undefined
-                      }
-                      onShare={openStoragePathShare}
-                      onMove={
-                        storageParentFolderId ? () => setStoragePathMoveOpen(true) : undefined
-                      }
-                      onTogglePin={() => void toggleStoragePathPin()}
-                    />
-                  ) : null}
                 </>
               );
             })()}
@@ -2590,16 +2635,12 @@ export default function FileGrid({
             </button>
             <span className="text-neutral-400 dark:text-neutral-500">/</span>
             {isStorageV2FolderBrowse ? (
-              <StorageLocationMenu
-                pathLabel={storagePathMenuLabel}
-                isInsideSubfolder={!!storageParentFolderId}
-                folderPinned={storageMenuFolderPinned}
-                onNewFolder={() => setStoragePathCreateOpen(true)}
-                onRename={storageParentFolderId ? () => setStoragePathRenameOpen(true) : undefined}
-                onShare={openStoragePathShare}
-                onMove={storageParentFolderId ? () => setStoragePathMoveOpen(true) : undefined}
-                onTogglePin={() => void toggleStoragePathPin()}
-              />
+              <span
+                className="min-w-0 truncate font-medium text-neutral-900 dark:text-white"
+                title={storagePathFullLabel || storagePathMenuLabel}
+              >
+                {storagePathMenuLabel}
+              </span>
             ) : (
               <>
                 <span className="flex flex-wrap items-center gap-2 font-medium text-neutral-900 dark:text-white">
@@ -2950,7 +2991,7 @@ export default function FileGrid({
             {(useFilteredScoped
               ? filesToShow.length > 0
               : currentDrive
-                ? subfolderItems.length > 0 || displayedFilesWithMacosPackages.length > 0
+                ? gridSubfolderItems.length > 0 || displayedFilesWithMacosPackages.length > 0
                 : filesLandingRecentsMode
                   ? recentUploads.length > 0
                   : folderItems.length > 0 || recentFiles.length > 0) && (
@@ -2962,7 +3003,7 @@ export default function FileGrid({
                     setSelectedFolderKeys(new Set());
                   } else if (currentDrive) {
                     setSelectedFileIds(new Set(displayedFilesWithMacosPackages.map((f) => f.id)));
-                    setSelectedFolderKeys(new Set(subfolderItems.map((s) => s.key)));
+                    setSelectedFolderKeys(new Set(gridSubfolderItems.map((s) => s.key)));
                   } else if (filesLandingRecentsMode) {
                     setSelectedFileIds(new Set(recentUploads.map((f) => f.id)));
                     setSelectedFolderKeys(new Set());
@@ -2998,7 +3039,7 @@ export default function FileGrid({
               Loading…
             </span>
           </div>
-        ) : useFilteredScoped || subfolderItems.length > 0 || displayedFilesWithMacosPackages.length > 0 ? (
+        ) : useFilteredScoped || gridSubfolderItems.length > 0 || displayedFilesWithMacosPackages.length > 0 ? (
             viewMode === "list" ? (
               <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
                 <table className="w-full text-left text-sm">
@@ -3027,7 +3068,7 @@ export default function FileGrid({
                         </td>
                       </tr>
                     )}
-                    {showFolders && subfolderItems.map((item) => {
+                    {showFolders && gridSubfolderItems.map((item) => {
                       const canDragFolder = !!item.driveId && !item.preventMove;
                       const rowDriveId = item.driveId ?? item.storageLinkedDriveId ?? "";
                       const isFolderInSelection = selectedFolderKeys.has(item.key);
@@ -3132,7 +3173,7 @@ export default function FileGrid({
                   </span>
                 </div>
               )}
-              {showFolders && subfolderItems.map((item) => {
+              {showFolders && gridSubfolderItems.map((item) => {
                 const isFolderInSelection = selectedFolderKeys.has(item.key);
                 const canDragFolder = !!item.driveId && !item.preventMove;
                 const cardDriveId = item.driveId ?? item.storageLinkedDriveId ?? "";
@@ -3302,7 +3343,7 @@ export default function FileGrid({
                         <>
                           <button
                             type="button"
-                            onClick={() => setStoragePathCreateOpen(true)}
+                            onClick={() => workspaceQuickActionsRegistry.openNewFolder()}
                             className="font-semibold text-bizzi-blue underline-offset-4 hover:underline dark:text-bizzi-cyan"
                           >
                             Create folder
@@ -3801,45 +3842,125 @@ export default function FileGrid({
         initialFiles={transferInitialFiles}
       />
 
-      {currentDrive && isStorageV2FolderBrowse && user ? (
-        <CreateFolderModal
-          open={storagePathCreateOpen}
-          onClose={() => setStoragePathCreateOpen(false)}
-          title="New folder"
-          defaultName="Untitled folder"
-          onCreateEmpty={async (folderName) => {
-            const token = await user.getIdToken();
-            const res = await fetch("/api/storage-folders", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({
-                linked_drive_id: currentDrive.id,
-                parent_folder_id: storageParentFolderId,
-                name: folderName.trim(),
-              }),
-            });
-            if (!res.ok) {
-              const data = await res.json().catch(() => ({}));
-              throw new Error((data.error as string) ?? "Could not create folder");
-            }
-            const created = (await res.json()) as { id?: string };
-            const newId = typeof created.id === "string" ? created.id : "";
-            if (newId && currentDrive) {
-              const nk = buildStorageV2FolderPinId(currentDrive.id, newId);
-              setStorageV2RevealFolderKey(nk);
-              window.setTimeout(() => {
-                setStorageV2RevealFolderKey((k) => (k === nk ? null : k));
-              }, 920);
-            }
-            bumpStorageVersion();
-            setStoragePathCreateOpen(false);
-            handleV2StorageFolderMutated();
-          }}
-        />
-      ) : null}
+      {typeof document !== "undefined" &&
+        workspaceContextMenu &&
+        createPortal(
+          (() => {
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const mw = 208;
+            const mh = 320;
+            let left = workspaceContextMenu.x;
+            let top = workspaceContextMenu.y;
+            if (left + mw > vw - 8) left = Math.max(8, vw - mw - 8);
+            if (top + mh > vh - 8) top = Math.max(8, vh - mh - 8);
+            const rowClass =
+              "flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700";
+            return (
+              <div
+                ref={workspaceContextMenuRef}
+                role="menu"
+                className="fixed z-[200] min-w-[12.5rem] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                style={{ left, top }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={rowClass}
+                  onClick={() => {
+                    setWorkspaceContextMenu(null);
+                    workspaceQuickActionsRegistry.openNewFolder();
+                  }}
+                >
+                  <FolderPlus className="h-4 w-4 shrink-0" />
+                  {isStorageV2FolderBrowse ? "New folder in Storage" : "Create folder"}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={rowClass}
+                  onClick={() => {
+                    setWorkspaceContextMenu(null);
+                    void workspaceQuickActionsRegistry.openFileUpload();
+                  }}
+                >
+                  <Upload className="h-4 w-4 shrink-0" />
+                  File Upload
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={rowClass}
+                  onClick={() => {
+                    setWorkspaceContextMenu(null);
+                    workspaceQuickActionsRegistry.openSharedFolder();
+                  }}
+                >
+                  <Share2 className="h-4 w-4 shrink-0" />
+                  Shared Folder
+                </button>
+                {isStorageV2FolderBrowse ? (
+                  <>
+                    <div className="my-1 border-t border-neutral-100 dark:border-neutral-800" />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={rowClass}
+                      onClick={() => {
+                        setWorkspaceContextMenu(null);
+                        openStoragePathShare();
+                      }}
+                    >
+                      <Share2 className="h-4 w-4 shrink-0" />
+                      Share
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={rowClass}
+                      onClick={() => {
+                        setWorkspaceContextMenu(null);
+                        void toggleStoragePathPin();
+                      }}
+                    >
+                      <Pin className="h-4 w-4 shrink-0" />
+                      {storageMenuFolderPinned ? "Remove from Pin" : "Add to Pin"}
+                    </button>
+                    {storageParentFolderId ? (
+                      <>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={rowClass}
+                          onClick={() => {
+                            setWorkspaceContextMenu(null);
+                            setStoragePathRenameOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4 shrink-0" />
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={rowClass}
+                          onClick={() => {
+                            setWorkspaceContextMenu(null);
+                            setStoragePathMoveOpen(true);
+                          }}
+                        >
+                          <FolderInput className="h-4 w-4 shrink-0" />
+                          Move to…
+                        </button>
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            );
+          })(),
+          document.body
+        )}
 
       {currentDrive &&
       isStorageV2FolderBrowse &&

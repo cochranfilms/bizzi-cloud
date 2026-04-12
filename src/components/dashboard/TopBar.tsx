@@ -1,8 +1,30 @@
 "use client";
 
-import { Plus, Upload, Folder, Share2, Send, ChevronDown, Loader2, AlertCircle, X, Settings } from "lucide-react";
+import {
+  Plus,
+  Upload,
+  Folder,
+  Share2,
+  Send,
+  ChevronDown,
+  Loader2,
+  AlertCircle,
+  X,
+  Settings,
+  Pin,
+  Pencil,
+  FolderInput,
+} from "lucide-react";
 import Link from "next/link";
-import { useState, useRef, useEffect, useContext, useCallback, type ReactNode } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useContext,
+  useCallback,
+  useMemo,
+  type ReactNode,
+} from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
 import CreateFolderModal from "./CreateFolderModal";
@@ -20,6 +42,9 @@ import {
   isLinkedDriveFolderModelV2,
   isStorageFoldersV2PillarDrive,
 } from "@/lib/linked-drive-folder-model";
+import { workspaceQuickActionsRegistry } from "@/lib/workspace-quick-actions-registry";
+import { usePinned } from "@/hooks/usePinned";
+import { buildStorageV2FolderPinId } from "@/lib/storage-v2-folder-pin";
 
 interface TopBarProps {
   /** When null/omitted with a default route, use default copy; pass null with centerContent to omit the title. */
@@ -102,6 +127,15 @@ export default function TopBar({
     !!currentDriveId &&
     !!currentLinkedForNested &&
     isStorageFoldersV2PillarDrive(currentLinkedForNested);
+
+  const { isPinned } = usePinned();
+  const storageMenuFolderPinned = useMemo(() => {
+    if (!canCreateStorageNestedFolder || !currentDriveId) return false;
+    if (storageParentFolderId) {
+      return isPinned("folder", buildStorageV2FolderPinId(currentDriveId, storageParentFolderId));
+    }
+    return isPinned("folder", currentDriveId);
+  }, [canCreateStorageNestedFolder, currentDriveId, storageParentFolderId, isPinned]);
 
   const resolveCanonicalStorageV2Drive = useCallback(() => {
     const candidates = linkedDrives.filter(
@@ -335,6 +369,24 @@ export default function TopBar({
     setCreateSharedFolderOpen(true);
   };
 
+  const quickActionsRef = useRef({
+    openNewFolder: () => {},
+    openFileUpload: async () => {},
+    openSharedFolder: () => {},
+  });
+  quickActionsRef.current.openNewFolder = () => setCreateFolderOpen(true);
+  quickActionsRef.current.openFileUpload = handleFileUploadClick;
+  quickActionsRef.current.openSharedFolder = handleSharedFolderClick;
+
+  useEffect(() => {
+    workspaceQuickActionsRegistry.setTopBarHandlers({
+      openNewFolder: () => quickActionsRef.current.openNewFolder(),
+      openFileUpload: () => quickActionsRef.current.openFileUpload(),
+      openSharedFolder: () => quickActionsRef.current.openSharedFolder(),
+    });
+    return () => workspaceQuickActionsRegistry.clearTopBarHandlers();
+  }, []);
+
   const showTitle = title != null && title !== "";
 
   const titleRow = showTitle || settingsHref ? (
@@ -443,6 +495,59 @@ export default function TopBar({
                   <Share2 className="h-4 w-4 flex-shrink-0" />
                   Shared Folder
                 </button>
+                {canCreateStorageNestedFolder ? (
+                  <>
+                    <div className="my-1 border-t border-neutral-100 dark:border-neutral-800" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewDropdownOpen(false);
+                        workspaceQuickActionsRegistry.shareCurrentStoragePath();
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                    >
+                      <Share2 className="h-4 w-4 flex-shrink-0" />
+                      Share
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewDropdownOpen(false);
+                        void workspaceQuickActionsRegistry.togglePinCurrentStoragePath();
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                    >
+                      <Pin className="h-4 w-4 flex-shrink-0" />
+                      {storageMenuFolderPinned ? "Remove from Pin" : "Add to Pin"}
+                    </button>
+                    {storageParentFolderId ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewDropdownOpen(false);
+                            workspaceQuickActionsRegistry.openRenameCurrentStoragePath();
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        >
+                          <Pencil className="h-4 w-4 flex-shrink-0" />
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewDropdownOpen(false);
+                            workspaceQuickActionsRegistry.openMoveCurrentStoragePath();
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        >
+                          <FolderInput className="h-4 w-4 flex-shrink-0" />
+                          Move to…
+                        </button>
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
               </div>
             )}
             <input
