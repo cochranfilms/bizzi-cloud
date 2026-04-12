@@ -307,30 +307,16 @@ export default function UppyUploadModal({
       return;
     }
     const measure = () => {
-      const el = workspaceUploadAnchorRef.current;
       const vw = window.innerWidth;
       const vh = window.visualViewport?.height ?? window.innerHeight;
-      const gap = 12;
-      /** Portrait-first panel (Shade-style): narrow width, tall body; sits above the cloud so the trigger stays tappable. */
-      const panelWidth = Math.min(380, Math.max(300, vw - 20));
-
-      if (!el) {
-        setPanelPlacement({
-          left: vw / 2,
-          bottom: 24,
-          width: panelWidth,
-          maxHeight: Math.min(Math.floor(vh * 0.72), 720),
-        });
-        return;
-      }
-      const r = el.getBoundingClientRect();
-      const availAbove = Math.max(140, r.top - gap);
-      const maxHeight = Math.min(Math.floor(vh * 0.74), availAbove - 10);
+      const gutter = 16;
+      const panelWidth = Math.min(380, Math.max(280, vw - gutter * 2));
+      /** Bottom-left of the viewport so the panel is not clipped on the right; cloud trigger lives in the Workspace rail. */
       setPanelPlacement({
-        left: r.left + r.width / 2,
-        bottom: vh - r.top + gap,
+        left: gutter,
+        bottom: gutter,
         width: panelWidth,
-        maxHeight: Math.max(280, maxHeight),
+        maxHeight: Math.min(Math.floor(vh * 0.72), 720),
       });
     };
     measure();
@@ -340,7 +326,7 @@ export default function UppyUploadModal({
       window.removeEventListener("resize", measure);
       window.visualViewport?.removeEventListener("resize", measure);
     };
-  }, [open, uploadQueueExpanded, workspaceUploadAnchorRef]);
+  }, [open, uploadQueueExpanded]);
 
   useEffect(() => {
     if (!open) {
@@ -1056,21 +1042,17 @@ export default function UppyUploadModal({
               width: place.width,
               maxHeight: place.maxHeight,
               zIndex: queueHidden ? 0 : 105,
-              transform: queueHidden
-                ? "translate(-50%, 0) translateX(min(100vw, 120vw))"
-                : "translate(-50%, 0)",
+              transform: queueHidden ? "translateX(calc(-100vw - 100%))" : "none",
               opacity: queueHidden ? 0 : 1,
               pointerEvents: queueHidden ? "none" : "auto",
             }
           : {
-              left: typeof window !== "undefined" ? window.innerWidth / 2 : 0,
-              bottom: 24,
-              width: Math.min(380, typeof window !== "undefined" ? window.innerWidth - 24 : 380),
+              left: 16,
+              bottom: 16,
+              width: Math.min(380, typeof window !== "undefined" ? window.innerWidth - 32 : 380),
               maxHeight: typeof window !== "undefined" ? Math.min(window.innerHeight * 0.72, 720) : 520,
               zIndex: queueHidden ? 0 : 105,
-              transform: queueHidden
-                ? "translate(-50%, 0) translateX(min(100vw, 120vw))"
-                : "translate(-50%, 0)",
+              transform: queueHidden ? "translateX(calc(-100vw - 100%))" : "none",
               opacity: queueHidden ? 0 : 1,
               pointerEvents: queueHidden ? "none" : "auto",
             }),

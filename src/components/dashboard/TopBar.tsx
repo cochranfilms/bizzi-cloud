@@ -408,14 +408,25 @@ export default function TopBar({
     </div>
   ) : null;
 
+  /** Keep Layout + New on one row so they don’t wrap under TopNavbar while browsing Storage. */
+  const hubActionsNoWrap = isWorkspaceHomeHub;
+
   const actionsRow = (
     <>
       {filesFilterTopChrome}
-      <div className="flex min-w-0 w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3 md:gap-4">
+      <div
+        className={`flex min-w-0 w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end sm:gap-3 md:gap-4 ${
+          hubActionsNoWrap ? "sm:flex-nowrap sm:overflow-x-auto sm:[scrollbar-width:thin]" : "sm:flex-wrap"
+        }`}
+      >
         {showLayoutSettings ? (
-          <LayoutSettingsBar showViewMode={true} className="w-full py-0 sm:w-auto" />
+          <LayoutSettingsBar showViewMode={true} className="w-full shrink-0 py-0 sm:w-auto" />
         ) : null}
-        <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+        <div
+          className={`flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center ${
+            hubActionsNoWrap ? "sm:flex-nowrap" : "sm:flex-wrap"
+          }`}
+        >
         {showCreateTransfer ? (
             <button
               type="button"
@@ -585,7 +596,13 @@ export default function TopBar({
               ) : (
                 <div className="hidden sm:block sm:flex-1" aria-hidden />
               )}
-              <div className="flex min-w-0 w-full flex-nowrap items-center justify-end gap-2 overflow-x-auto pb-0.5 [scrollbar-width:thin] sm:w-auto sm:max-w-none sm:flex-wrap sm:gap-3 md:gap-4">
+              <div
+              className={`flex min-w-0 w-full items-center justify-end gap-2 pb-0.5 sm:w-auto sm:max-w-none sm:gap-3 md:gap-4 ${
+                hubActionsNoWrap
+                  ? "flex-nowrap overflow-x-auto [scrollbar-width:thin]"
+                  : "flex-nowrap overflow-x-auto [scrollbar-width:thin] sm:flex-wrap sm:overflow-visible"
+              }`}
+            >
                 {actionsRow}
               </div>
             </div>
@@ -596,7 +613,11 @@ export default function TopBar({
         ) : (
           <div className="flex min-h-12 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             {titleRow}
-            <div className="flex min-w-0 flex-1 flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3 md:gap-4">
+            <div
+              className={`flex min-w-0 flex-1 flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-3 md:gap-4 ${
+                hubActionsNoWrap ? "sm:flex-nowrap sm:overflow-x-auto sm:[scrollbar-width:thin]" : "sm:flex-wrap"
+              }`}
+            >
               {actionsRow}
             </div>
           </div>

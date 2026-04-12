@@ -8,6 +8,7 @@ import { formatVideoCommentTimecodeWithMs } from "@/lib/video-comment-timecode";
 
 const MAX_HEIGHT_PX = 128;
 const MIN_HEIGHT_PX = 40;
+const IMMERSIVE_VIDEO_MAX_HEIGHT_PX = 88;
 
 interface AddCommentInputProps {
   onSubmit: (body: string, videoTimestampSec?: number | null) => Promise<boolean>;
@@ -52,14 +53,16 @@ export default function AddCommentInput({
   const [submitting, setSubmitting] = useState(false);
   const [pinnedVideoSec, setPinnedVideoSec] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const useVideoCommentShell = !!(immersiveChrome && immersiveVideoComment);
 
   const syncHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    const next = Math.min(MAX_HEIGHT_PX, Math.max(MIN_HEIGHT_PX, el.scrollHeight));
+    const cap = useVideoCommentShell ? IMMERSIVE_VIDEO_MAX_HEIGHT_PX : MAX_HEIGHT_PX;
+    const next = Math.min(cap, Math.max(MIN_HEIGHT_PX, el.scrollHeight));
     el.style.height = `${next}px`;
-  }, []);
+  }, [useVideoCommentShell]);
 
   useEffect(() => {
     if (autoFocus && textareaRef.current) {
@@ -102,8 +105,8 @@ export default function AddCommentInput({
 
   const shellRowClass = immersiveChrome
     ? immersiveIsDark
-      ? "flex min-h-[3rem] w-full min-w-0 items-center gap-3 rounded-full border border-white/16 bg-white/[0.07] px-3.5 py-2.5 shadow-inner shadow-black/25 focus-within:border-white/30 focus-within:ring-2 focus-within:ring-bizzi-cyan/25"
-      : "flex min-h-[3rem] w-full min-w-0 items-center gap-3 rounded-full border border-neutral-200 bg-white px-3.5 py-2.5 shadow-sm focus-within:border-bizzi-blue/45 focus-within:ring-2 focus-within:ring-bizzi-blue/12"
+      ? "flex min-h-[2.75rem] w-full min-w-0 items-start gap-2.5 rounded-2xl border border-white/16 bg-white/[0.07] px-3 py-2 shadow-inner shadow-black/25 focus-within:border-white/30 focus-within:ring-2 focus-within:ring-bizzi-cyan/25"
+      : "flex min-h-[2.75rem] w-full min-w-0 items-start gap-2.5 rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm focus-within:border-bizzi-blue/45 focus-within:ring-2 focus-within:ring-bizzi-blue/12"
     : "";
 
   const textareaInShellClass = immersiveChrome
@@ -120,7 +123,6 @@ export default function AddCommentInput({
 
   const photo = composerPhotoURL?.trim() || null;
   const showComposerAvatar = immersiveChrome && !!composerDisplayLabel.trim();
-  const useVideoCommentShell = !!(immersiveChrome && immersiveVideoComment);
   const shadeStyleBlock = useVideoCommentShell && showComposerAvatar;
 
   const displayName = composerDisplayLabel.trim();
@@ -176,7 +178,7 @@ export default function AddCommentInput({
 
   const badge = useVideoCommentShell ? (
     <span
-      className="shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-semibold tabular-nums leading-none tracking-tight text-white sm:text-xs"
+      className="mt-0.5 shrink-0 self-start rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums leading-none tracking-tight text-white sm:text-xs"
       style={{ backgroundColor: accentHex || "#64748b" }}
     >
       {formatVideoCommentTimecodeWithMs(displaySec)}
@@ -197,7 +199,7 @@ export default function AddCommentInput({
       rows={1}
       disabled={submitting}
       className={useVideoCommentShell ? textareaInShellClass : inputClass}
-      style={{ maxHeight: MAX_HEIGHT_PX }}
+      style={{ maxHeight: useVideoCommentShell ? IMMERSIVE_VIDEO_MAX_HEIGHT_PX : MAX_HEIGHT_PX }}
     />
   );
 
@@ -239,7 +241,7 @@ export default function AddCommentInput({
           >
             {displayName}
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-start gap-2.5">
             <div className={`${shellRowClass} min-w-0 flex-1`}>
               {badge}
               {textArea}

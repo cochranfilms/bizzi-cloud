@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getFirebaseAuth, getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
 import { formatBytes } from "@/lib/analytics/format-bytes";
 import { FREE_TIER_STORAGE_BYTES } from "@/lib/plan-constants";
+import WorkspaceUploadDock from "./WorkspaceUploadDock";
 
 type StorageStatusPayload = {
   workspace_used_bytes?: number;
@@ -308,6 +309,9 @@ export default function StorageBadge() {
             owner combined).
           </p>
         ))}
+      <div className="mt-3 flex w-full justify-center border-t border-neutral-200/80 pt-3 dark:border-neutral-700/80">
+        <WorkspaceUploadDock />
+      </div>
       <div className="pt-2">
         <button
           type="button"

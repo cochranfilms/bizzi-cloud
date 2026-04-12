@@ -135,6 +135,13 @@ export async function createStorageFolder(
     pending_operation: null,
   });
 
+  if (params.parent_folder_id) {
+    await db
+      .collection(COLLECTION_STORAGE_FOLDERS)
+      .doc(params.parent_folder_id)
+      .update({ updated_at: now });
+  }
+
   return { id: folderRef.id };
 }
 

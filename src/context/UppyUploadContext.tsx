@@ -268,6 +268,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
 
       if (same) {
         setOpen(true);
+        setUploadQueueExpanded(true);
         return;
       }
 
@@ -301,7 +302,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
       setPendingFiles(
         options?.initialFiles && options.initialFiles.length > 0 ? [...options.initialFiles] : []
       );
-      setUploadQueueExpanded(Boolean(options?.initialFiles && options.initialFiles.length > 0));
+      setUploadQueueExpanded(true);
       setOpen(true);
     },
     []
