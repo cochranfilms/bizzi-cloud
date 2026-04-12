@@ -46,6 +46,9 @@ export const WAITLIST_KEYWORDS = [
 ] as const;
 export const WAITLIST_OG_IMAGE = `${SITE_URL}/waitlist/opengraph-image`;
 
+/** Explore Bizzi academy — dedicated OG route (see `src/app/explore/opengraph-image.tsx`). */
+export const EXPLORE_OG_IMAGE = `${SITE_URL}/explore/opengraph-image`;
+
 /** FAQ content for structured data (FAQPage schema) and AI GEO. */
 export const FAQ_ITEMS = [
   {

@@ -11,6 +11,7 @@ const companyLinks: { href: string; label: string; external?: boolean }[] = [
 ];
 
 const pagesLinks: { href: string; label: string; external?: boolean }[] = [
+  { href: "/explore", label: "Explore Bizzi" },
   { href: "#pricing", label: "Pricing" },
   { href: "#faq", label: "FAQ" },
   { href: "/desktop", label: "Download for Desktop" },

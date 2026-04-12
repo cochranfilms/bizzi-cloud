@@ -10,6 +10,7 @@ import LandingSculptedNavBackground from "@/components/landing/LandingSculptedNa
 
 const navLinks: { href: string; label: string; external?: boolean }[] = [
   { href: "/", label: "Home" },
+  { href: "/explore", label: "Explore Bizzi" },
   { href: "#how-it-works", label: "About us" },
   { href: "#pricing", label: "Pricing" },
   { href: "#faq", label: "Contact" },
@@ -98,7 +99,8 @@ export default function Header({ variant = "default" }: HeaderProps) {
                 target={link.external ? "_blank" : undefined}
                 rel={link.external ? "noopener noreferrer" : undefined}
                 className={`text-sm transition-colors whitespace-nowrap ${
-                  link.href === "/" && pathname === "/"
+                  (link.href === "/" && pathname === "/") ||
+                  (link.href === "/explore" && pathname === "/explore")
                     ? "font-semibold text-neutral-950 dark:text-white"
                     : "font-medium text-neutral-700 hover:text-neutral-950 dark:text-neutral-300 dark:hover:text-white"
                 }`}

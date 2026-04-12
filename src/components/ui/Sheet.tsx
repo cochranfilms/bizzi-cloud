@@ -51,7 +51,9 @@ export default function Sheet({
         aria-hidden
       />
       <div
-        className={`fixed inset-y-0 z-50 flex w-full max-w-md flex-col bg-white shadow-xl dark:bg-neutral-900 md:max-w-sm lg:max-w-md ${side === "right" ? "right-0" : "left-0"} animate-in slide-in-from-end duration-200 ${className}`}
+        className={`fixed inset-y-0 z-50 flex w-full max-w-md flex-col bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-xl dark:bg-neutral-900 md:max-w-sm lg:max-w-md ${
+          side === "right" ? "right-0 animate-in slide-in-from-end" : "left-0 animate-in slide-in-from-start"
+        } duration-200 ${className}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? "sheet-title" : undefined}

@@ -26,8 +26,27 @@
 @layer components {
   .landing-page-shell,
   .landing-hero-shell-surface,
-  .waitlist-page-shell {
+  .waitlist-page-shell,
+  .explore-page-print {
     background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 40%, #bae6fd 70%, #7dd3fc 100%);
+  }
+}
+
+@media print {
+  .explore-page-print {
+    background: white !important;
+  }
+  .explore-section-print {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+/* Explore Bizzi: prevent horizontal scroll from wide tables/cards */
+@layer components {
+  .explore-academy-shell {
+    overflow-x: clip;
+    -webkit-overflow-scrolling: touch;
   }
 }
 
